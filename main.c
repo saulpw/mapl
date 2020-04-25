@@ -11,9 +11,16 @@ typedef long long int i64;
 
 #define push(X) *SP++ = (X);
 #define pop() (*--SP)
+#define peek(X) *(SP-X-1)
 
-i64 STACK[16];
-i64 *SP = STACK;
+
+typedef struct array {
+    i64 *vals;
+    int n, dim;
+} array;
+
+array *STACK[16];
+array **SP = STACK;
 char PAD[80];
 
 // return number of chars parsed into PAD
@@ -31,13 +38,31 @@ typedef struct verb {
     verbfunc *func;
 } verb;
 
-int add(void) { i64 v = pop(); STACK[0] += v; return 0; }
-int print(void) { printf("%lld ", pop()); return 0; }
+array *newarray()
+{
+    array *a = alloc(sizeof(array));
+    a->vals = NULL;
+    a->n = 0;
+    a->dim = 0;
+    return a;
+}
 
+void append(array *a, i64 v) {
+    if (a->n+1 > a->dim) {
+        a->dim = a->n + 1;
+        a->vals = realloc(a->vals, sizeof(*a->vals)*a->dim);
+    }
+    a->vals[a->n++] = v;
+}
+
+int f_add(void) { array *a=pop(); array *b=peek(0); DO(a->n, b->vals[i] += a->vals[i]); return 0; }
+int f_print(void) { array *a=pop(); DO(a->n, printf("%lld ", a->vals[i])); return 0; }
+int f_pusharray(void) { push(newarray()); return 0; }
 
 verb verbs[] = {
-    (struct verb){.name="+", .func=add },
-    (struct verb){.name=".", .func=print },
+    (struct verb){.name="+", .func=f_add },
+    (struct verb){.name=".", .func=f_print },
+    (struct verb){.name="[", .func=f_pusharray },
 };
 
 verb *find(const char *tok) {
@@ -45,14 +70,14 @@ verb *find(const char *tok) {
     return NULL;
 }
 
-int interpret(char *input) {
+array *interpret(char *input) {
     while (*input) {
         int i = parse(PAD, input);
         if (!*PAD) break;
         char *endptr = NULL;
         i64 v = strtoll(PAD, &endptr, 0);
         if (endptr != PAD) { // some valid number
-            push(v);
+            append(peek(0), v);
         } else {
             verb *v = find(PAD);
             if (!v) { printf("unknown: %s\n", PAD); }
@@ -60,7 +85,7 @@ int interpret(char *input) {
         }
         input += i;
     }
-    return 0;
+    return NULL;
 }
 
 int main()
