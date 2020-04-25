@@ -34,7 +34,7 @@ typedef struct verb {
     verbfunc *func;
 } verb;
 
-#define VERB(TOK, VERBNAME)                      \
+#define _VERB(TOK, VERBNAME)                      \
     extern int v_##VERBNAME(void);            \
     verb verb_##VERBNAME                         \
         __attribute__((__section__("verbs")))    \
@@ -101,12 +101,13 @@ int main()
     while(fgets(s, sizeof(s), stdin)) print(interpret(s));
 }
 
-#define UNOP(T, N, STMT)  VERB(T, N) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
-#define BINOP(T, N, STMT) VERB(T, N) { array *B=pop(); array *A=peek(0); STMT; return 0; } // A B -> A?B
+#define VERB(T, N, STMT) _VERB(T, N) { STMT; return 0; }
+#define UNOP(T, N, STMT)  _VERB(T, N) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
+#define BINOP(T, N, STMT) _VERB(T, N) { array *B=pop(); array *A=peek(0); STMT; return 0; } // A B -> A?B
 
-VERB("dup", dup) { push(peek(0)); return 0; }
+VERB("dup", dup, push(peek(0)))
 BINOP("+", add, DO(B->n, A_i += B_i))
-VERB(".S", printstack) { DO(DEPTH, print(peek(i))); return 0; }
-VERB("[", pusharray) { push(redim(NULL, 0)); return 0; }
+VERB(".S", printstack, DO(DEPTH, print(peek(i))))
+VERB("[", pusharray, push(redim(NULL, 0)))
 UNOP("iota", iota, B=push(redim(NULL, A->vals[0])); DO(B->dim, B_i=i); B->n=B->dim)
 UNOP(".", print, print(A))
