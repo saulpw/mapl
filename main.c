@@ -53,17 +53,17 @@ verb *find(const char *tok) {
 // arrays
 //
 void redim(array *a, int dim) { if (dim > a->dim) { a->dim=dim; a->vals=realloc(a->vals, sizeof(*a->vals)*a->dim); } }
+void append(array *a, i64 v) { redim(a, a->n+1); a->vals[a->n++] = v; }
+void print(array *a) { DO(a->n, printf("%lld ", a->vals[i])); cr(); }
 
 array *newarray(int dim)
 {
     array *a = alloc(sizeof(array));
-    a->n = 0;
+    a->n = a->dim = 0;
     redim(a, dim);
     return a;
 }
 
-void append(array *a, i64 v) { redim(a, a->n+1); a->vals[a->n++] = v; }
-void print(array *a) { DO(a->n, printf("%lld ", a->vals[i])); cr(); }
 //
 // REPL
 //
@@ -92,13 +92,13 @@ array *interpret(char *input) {
         }
         input += i;
     }
-    return NULL;
+    return peek(0);
 }
 
 int main()
 {
     char s[128];
-    while(fgets(s, sizeof(s), stdin)) interpret(s);
+    while(fgets(s, sizeof(s), stdin)) print(interpret(s));
 }
 
 VERB("+", add) { array *a=pop(); array *b=peek(0); DO(a->n, b->vals[i] += a->vals[i]); return 0; }
