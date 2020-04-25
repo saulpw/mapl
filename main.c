@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <ctype.h>
 #include <string.h>
 #include <stdio.h>
@@ -16,8 +17,8 @@ typedef struct array {
 array *STACK[16];
 array **SP = STACK;
 #define DEPTH (SP-STACK)
-#define push(X) *SP++ = (X);
-#define pop() (*--SP)
+array *push(array *a) { *SP++ = a; return a; }
+array *pop(void) { assert(DEPTH > 0); return *--SP; }
 #define peek(X) *(SP-X-1)
 
 char PAD[80];
@@ -41,28 +42,27 @@ typedef struct verb {
          = { TOK, v_##VERBNAME };       \
     int v_##VERBNAME(void)
 
+#define A_i A->vals[i]
+#define B_i B->vals[i]
+
 extern verb __start_verbs[];
 extern verb __stop_verbs[];
 
 verb *find(const char *tok) {
-    DO(__stop_verbs-__start_verbs, if(!strcmp(__start_verbs[i].name, PAD)) return &__start_verbs[i]);
+    DO(__stop_verbs-__start_verbs, if(!strcasecmp(__start_verbs[i].name, PAD)) return &__start_verbs[i]);
     return NULL;
 }
 
 //
 // arrays
 //
-void redim(array *a, int dim) { if (dim > a->dim) { a->dim=dim; a->vals=realloc(a->vals, sizeof(*a->vals)*a->dim); } }
-void append(array *a, i64 v) { redim(a, a->n+1); a->vals[a->n++] = v; }
-void print(array *a) { DO(a->n, printf("%lld ", a->vals[i])); cr(); }
-
-array *newarray(int dim)
-{
-    array *a = alloc(sizeof(array));
-    a->n = a->dim = 0;
-    redim(a, dim);
+array *redim(array *a, int dim) {
+    if (!a) { a=alloc(sizeof(array)); a->n = a->dim = 0; }
+    if (dim > a->dim) { a->dim=dim; a->vals=realloc(a->vals, sizeof(*a->vals)*a->dim); }
     return a;
 }
+void append(array *a, i64 v) { redim(a, a->n+1); a->vals[a->n++] = v; }
+void print(array *a) { DO(a->n, printf("%lld ", a->vals[i])); cr(); }
 
 //
 // REPL
@@ -101,8 +101,12 @@ int main()
     while(fgets(s, sizeof(s), stdin)) print(interpret(s));
 }
 
-VERB("+", add) { array *a=pop(); array *b=peek(0); DO(a->n, b->vals[i] += a->vals[i]); return 0; }
-VERB(".", print) { array *a=pop(); print(a); return 0; }
+#define UNOP(T, N, STMT)  VERB(T, N) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
+#define BINOP(T, N, STMT) VERB(T, N) { array *B=pop(); array *A=peek(0); STMT; return 0; } // A B -> A?B
+
+VERB("dup", dup) { push(peek(0)); return 0; }
+BINOP("+", add, DO(B->n, A_i += B_i))
 VERB(".S", printstack) { DO(DEPTH, print(peek(i))); return 0; }
-VERB("[", pusharray) { push(newarray(0)); return 0; }
-VERB("iota", iota) { array *a=pop(); array *b=newarray(a->vals[0]); DO(b->dim, b->vals[i]=i); b->n=b->dim; push(b); return 0; }
+VERB("[", pusharray) { push(redim(NULL, 0)); return 0; }
+UNOP("iota", iota, B=push(redim(NULL, A->vals[0])); DO(B->dim, B_i=i); B->n=B->dim)
+UNOP(".", print, print(A))
