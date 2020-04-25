@@ -7,29 +7,17 @@
 typedef long long int i64;
 #define alloc malloc
 
-#ifndef MAX
-#define MAX(a,b) \
-   ({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a > _b ? _a : _b; })
-#endif
-
-#ifndef MIN
-#define MIN(a,b) \
-   ({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a < _b ? _a : _b; })
-#endif
-
+#define MAX(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a > _b ? _a : _b; })
+#define MIN(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a < _b ? _a : _b; })
 #define DO(n,x) {int i=0,_n=(n);for(;i<_n;++i){x;}}
 #define LEN(X) (sizeof(X)/sizeof((X)[0]))
+#define P(X) ({ i64 _x = (X); printf("[%lld] ", _x); _x; })
+
 
 typedef struct array {
     i64 *vals;
     int n, dim;
 } array;
-
-#define P(X) ({ i64 _x = (X); printf("[%lld] ", _x); _x; })
 
 array *STACK[16];
 array **SP = STACK;
