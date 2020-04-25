@@ -15,11 +15,14 @@ typedef struct array {
 
 array *STACK[16];
 array **SP = STACK;
+#define DEPTH (SP-STACK)
 #define push(X) *SP++ = (X);
 #define pop() (*--SP)
 #define peek(X) *(SP-X-1)
 
 char PAD[80];
+void cr(void) { printf("\n"); }
+
 
 //
 // dictionary
@@ -49,23 +52,18 @@ verb *find(const char *tok) {
 //
 // arrays
 //
-array *newarray(void)
+void redim(array *a, int dim) { if (dim > a->dim) { a->dim=dim; a->vals=realloc(a->vals, sizeof(*a->vals)*a->dim); } }
+
+array *newarray(int dim)
 {
     array *a = alloc(sizeof(array));
-    a->vals = NULL;
     a->n = 0;
-    a->dim = 0;
+    redim(a, dim);
     return a;
 }
 
-void append(array *a, i64 v) {
-    if (a->n+1 > a->dim) {
-        a->dim = a->n + 1;
-        a->vals = realloc(a->vals, sizeof(*a->vals)*a->dim);
-    }
-    a->vals[a->n++] = v;
-}
-
+void append(array *a, i64 v) { redim(a, a->n+1); a->vals[a->n++] = v; }
+void print(array *a) { DO(a->n, printf("%lld ", a->vals[i])); cr(); }
 //
 // REPL
 //
@@ -104,5 +102,7 @@ int main()
 }
 
 VERB("+", add) { array *a=pop(); array *b=peek(0); DO(a->n, b->vals[i] += a->vals[i]); return 0; }
-VERB(".", print) { array *a=pop(); DO(a->n, printf("%lld ", a->vals[i])); return 0; }
-VERB("[", pusharray) { push(newarray()); return 0; }
+VERB(".", print) { array *a=pop(); print(a); return 0; }
+VERB(".S", printstack) { DO(DEPTH, print(peek(i))); return 0; }
+VERB("[", pusharray) { push(newarray(0)); return 0; }
+VERB("iota", iota) { array *a=pop(); array *b=newarray(a->vals[0]); DO(b->dim, b->vals[i]=i); b->n=b->dim; push(b); return 0; }
