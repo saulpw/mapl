@@ -38,7 +38,7 @@ typedef struct verb {
     verbfunc *func;
 } verb;
 
-array *newarray()
+array *newarray(void)
 {
     array *a = alloc(sizeof(array));
     a->vals = NULL;
@@ -46,6 +46,17 @@ array *newarray()
     a->dim = 0;
     return a;
 }
+
+#define VERB(TOK, VERBNAME)                      \
+    extern int v_##VERBNAME(void);            \
+    verb verb_##VERBNAME                         \
+        __attribute__((__section__("verbs")))    \
+        __attribute__((__used__))                \
+         = { TOK, v_##VERBNAME };       \
+    int v_##VERBNAME(void)
+
+extern verb __start_verbs[];
+extern verb __stop_verbs[];
 
 void append(array *a, i64 v) {
     if (a->n+1 > a->dim) {
@@ -55,18 +66,12 @@ void append(array *a, i64 v) {
     a->vals[a->n++] = v;
 }
 
-int f_add(void) { array *a=pop(); array *b=peek(0); DO(a->n, b->vals[i] += a->vals[i]); return 0; }
-int f_print(void) { array *a=pop(); DO(a->n, printf("%lld ", a->vals[i])); return 0; }
-int f_pusharray(void) { push(newarray()); return 0; }
-
-verb verbs[] = {
-    (struct verb){.name="+", .func=f_add },
-    (struct verb){.name=".", .func=f_print },
-    (struct verb){.name="[", .func=f_pusharray },
-};
+VERB("+", add) { array *a=pop(); array *b=peek(0); DO(a->n, b->vals[i] += a->vals[i]); return 0; }
+VERB(".", print) { array *a=pop(); DO(a->n, printf("%lld ", a->vals[i])); return 0; }
+VERB("[", pusharray) { push(newarray()); return 0; }
 
 verb *find(const char *tok) {
-    DO(LEN(verbs), if(!strcmp(verbs[i].name, PAD)) return &verbs[i]);
+    DO(__stop_verbs-__start_verbs, if(!strcmp(__start_verbs[i].name, PAD)) return &__start_verbs[i]);
     return NULL;
 }
 
