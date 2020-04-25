@@ -15,3 +15,5 @@ output: `0 2 4 6 8`
 ## 4.
 test: `[ 5 iota  [ 3 iota + .`
 output: `0 2 4 3 6`
+
+## 5. add tests.mapl and tests-golden.txt

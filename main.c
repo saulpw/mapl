@@ -6,6 +6,21 @@
 
 typedef long long int i64;
 #define alloc malloc
+
+#ifndef MAX
+#define MAX(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
+#endif
+
+#ifndef MIN
+#define MIN(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a < _b ? _a : _b; })
+#endif
+
 #define DO(n,x) {int i=0,_n=(n);for(;i<_n;++i){x;}}
 #define LEN(X) (sizeof(X)/sizeof((X)[0]))
 
@@ -13,6 +28,8 @@ typedef struct array {
     i64 *vals;
     int n, dim;
 } array;
+
+#define P(X) ({ i64 _x = (X); printf("[%lld] ", _x); _x; })
 
 array *STACK[16];
 array **SP = STACK;
@@ -42,8 +59,8 @@ typedef struct verb {
          = { TOK, v_##VERBNAME };       \
     int v_##VERBNAME(void)
 
-#define A_i A->vals[i]
-#define B_i B->vals[i]
+#define A_i A->vals[i%A->n]
+#define B_i B->vals[i%B->n]
 
 extern verb __start_verbs[];
 extern verb __stop_verbs[];
@@ -98,16 +115,18 @@ array *interpret(char *input) {
 int main()
 {
     char s[128];
-    while(fgets(s, sizeof(s), stdin)) print(interpret(s));
+    while(fgets(s, sizeof(s), stdin)) { printf("   >>>  %s", s); print(interpret(s)); }
 }
-
 #define VERB(T, N, STMT) _VERB(T, N) { STMT; return 0; }
 #define UNOP(T, N, STMT)  _VERB(T, N) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
 #define BINOP(T, N, STMT) _VERB(T, N) { array *B=pop(); array *A=peek(0); STMT; return 0; } // A B -> A?B
 
 VERB("dup", dup, push(peek(0)))
-BINOP("+", add, DO(B->n, A_i += B_i))
+BINOP("+", add, DO(MAX(A->n, B->n), A_i += B_i))
+BINOP("*", mult, DO(MAX(A->n, B->n), A_i *= B_i))
 VERB(".S", printstack, DO(DEPTH, print(peek(i))))
 VERB("[", pusharray, push(redim(NULL, 0)))
-UNOP("iota", iota, B=push(redim(NULL, A->vals[0])); DO(B->dim, B_i=i); B->n=B->dim)
+UNOP("iota", iota, B=push(redim(NULL, A->vals[0])); B->n=B->dim; DO(B->dim, B_i=i))
 UNOP(".", print, print(A))
+UNOP("??", check, DO(A->n, assert(A_i)))
+UNOP("==", equals, DO(A->n, A_i = (A_i == B_i)))
