@@ -16,7 +16,8 @@ typedef long long int i64;
 
 typedef struct array {
     i64 *vals;
-    int n, dim;
+    int dim; // number values allocated
+    int n;   // 1-D shape of array
 } array;
 
 array *STACK[16];
@@ -24,7 +25,7 @@ array **SP = STACK;
 #define DEPTH (SP-STACK)
 array *push(array *a) { *SP++ = a; return a; }
 array *pop(void) { assert(DEPTH > 0); return *--SP; }
-#define peek(X) *(SP-X-1)
+#define peek(X) *(SP-(X)-1)
 
 char PAD[80];
 void cr(void) { printf("\n"); }
@@ -47,9 +48,6 @@ typedef struct verb {
          = { TOK, v_##VERBNAME };       \
     int v_##VERBNAME(void)
 
-#define A_i A->vals[i%A->n]
-#define B_i B->vals[i%B->n]
-
 extern verb __start_verbs[];
 extern verb __stop_verbs[];
 
@@ -62,7 +60,7 @@ verb *find(const char *tok) {
 // arrays
 //
 array *redim(array *a, int dim) {
-    if (!a) { a=alloc(sizeof(array)); a->n = a->dim = 0; }
+    if (!a) { a=alloc(sizeof(array)); a->n=a->dim=0; }
     if (dim > a->dim) { a->dim=dim; a->vals=realloc(a->vals, sizeof(*a->vals)*a->dim); }
     return a;
 }
@@ -105,14 +103,20 @@ int main()
     char s[128];
     while(fgets(s, sizeof(s), stdin)) { printf("   >>>  %s", s); print(interpret(s)); }
 }
+
+#define $A A->n
+#define $B B->n
+#define A_i A->vals[i%$A]
+#define B_i B->vals[i%$B]
+
 #define VERB(T, N, STMT) _VERB(T, N) { STMT; return 0; }
 #define UNOP(T, N, STMT)  _VERB(T, N) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
-#define BINOP(T, N, STMT) _VERB(T, N) { array *B=pop(); array *A=peek(0); STMT; return 0; } // A B -> A?B
+#define BINOP(T, N, STMT) _VERB(T, N) { array *B=pop(); array *A=peek(0); DO(MAX($A, $B), STMT); return 0; } // A B -> A?B
 
 VERB("dup", dup, push(peek(0)))
-BINOP("+", add, DO(MAX(A->n, B->n), A_i += B_i))
-BINOP("*", mult, DO(MAX(A->n, B->n), A_i *= B_i))
-BINOP("==", equals, DO(MAX(A->n, B->n), A_i = (A_i == B_i)))
+BINOP("+", add, A_i += B_i)
+BINOP("*", mult, A_i *= B_i)
+BINOP("==", equals, A_i = (A_i == B_i))
 VERB(".S", printstack, DO(DEPTH, print(peek(i))))
 VERB("[", pusharray, push(redim(NULL, 0)))
 UNOP("iota", iota, B=push(redim(NULL, A->vals[0])); B->n=B->dim; DO(B->dim, B_i=i))
