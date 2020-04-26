@@ -8,17 +8,17 @@ typedef long long int i64;
 #define INT i64
 #define alloc malloc
 
-#define MAX(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a > _b ? _a : _b; })
-#define MIN(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a < _b ? _a : _b; })
-#define DO(n,x) {int i=0,_n=(n);for(;i<_n;++i){x;}}
+#define MAX(X,Y) ({ __typeof__ (X) _x = (X); __typeof__ (Y) _y = (Y); _x > _y ? _x : _y; })
+#define MIN(X,Y) ({ __typeof__ (X) _x = (X); __typeof__ (Y) _y = (Y); _x < _y ? _x : _y; })
+#define DO(N,STMT) {int i=0,_n=(N);for(;i<_n;++i){STMT;}}
 #define LEN(X) (sizeof(X)/sizeof((X)[0]))
 #define PR(X...) do { printf(X); fflush(stdout); } while (0)
 #define PINT(X) ({ i64 _x = (X); PR("["#X"=%lld] ", _x); _x; })
 
-// loop over each cell in A
-#define DO1(A, EXPR) DO(tr(A->rank, A->dims), i64 *p=&A->vals[i]; EXPR) // *A->strides[0]+sum(A->rank-1, A->strides+1)]; EXPR)
-// loop over each cell in A|B
-#define DO2(A, B, EXPR) int A_n=tr(A->rank, A->dims), B_n=tr(B->rank, B->dims); DO(MAX(A_n, B_n), i64 *p=&A->vals[i]; EXPR)
+// loop over each cell in X
+#define DO1(X, STMT) DO(tr((X)->rank, (X)->dims), i64 *p=&(X)->vals[i]; STMT)
+// loop over each cell in X|Y
+#define DO2(X, Y, STMT) int X_n=tr((X)->rank, (X)->dims), Y_n=tr((Y)->rank, (Y)->dims); DO(MAX(X_n, Y_n), i64 *p=&(X)->vals[i]; STMT)
 
 typedef struct array {
     INT *vals;
@@ -67,20 +67,20 @@ verb *find(const char *tok) {
 void copy(INT *d, INT *s, int n) { DO(n, d[i]=s[i]); }
 void revcopy(INT *d, INT *s, int n) { DO(n, d[n-i-1]=s[i]); }
 int tr(int rank, INT dims[rank]) { i64 z=1; DO(rank, z*=dims[i]); return z; }
-array *redim(array *a, int rank, INT strides[rank]) {
-    if (!a) { a=alloc(sizeof(array)); bzero(a, sizeof(*a)); a->rank=1; }
+array *redim(array *A, int rank, INT strides[rank]) {
+    if (!A) { A=alloc(sizeof(array)); bzero(A, sizeof(*A)); A->rank=1; }
     INT total = tr(rank, strides);
-    if (total > tr(a->rank, a->strides)) { a->vals=realloc(a->vals, sizeof(*a->vals)*total); assert(a->vals); }
-    a->rank=rank;
-    copy(a->strides, strides, rank);
-    return a;
+    if (total > tr(A->rank, A->strides)) { A->vals=realloc(A->vals, sizeof(*A->vals)*total); assert(A->vals); }
+    A->rank=rank;
+    copy(A->strides, strides, rank);
+    return A;
 }
-array *reshape(array *a, int rank, INT dims[rank]) {
+array *reshape(array *A, int rank, INT dims[rank]) {
     INT revdims[rank];
     revcopy(revdims, dims, rank);
-    a=redim(a, rank, revdims);
-    copy(a->dims, revdims, rank);
-    return a;
+    A=redim(A, rank, revdims);
+    copy(A->dims, revdims, rank);
+    return A;
 }
 void append(array *A, i64 v) { INT s[A->rank]; copy(s, A->strides, A->rank); s[0]++; redim(A, A->rank, s); A->vals[$A++] = v; }
 void print_rank(array *A, int n) {
