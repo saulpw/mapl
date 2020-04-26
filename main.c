@@ -31,7 +31,7 @@ typedef struct array {
 #define A_i A->vals[i%$A]
 #define B_i B->vals[i%$B]
 
-
+// --- stack ---
 array *STACK[16];
 array **SP = STACK;
 #define DEPTH (SP-STACK)
@@ -42,35 +42,24 @@ array *pop(void) { assert(DEPTH > 0); return *--SP; }
 char PAD[80];
 void cr(void) { PR("\n"); }
 
-
-//
-// dictionary
-//
+// --- dict ---
 typedef int (verbfunc)(void);
 typedef struct verb {
     const char *name;
     verbfunc *func;
 } verb;
+extern verb __start_verbs[], __stop_verbs[];
 
-#define _VERB(TOK, VERBNAME)                      \
-    extern int v_##VERBNAME(void);            \
-    verb verb_##VERBNAME                         \
-        __attribute__((__section__("verbs")))    \
-        __attribute__((__used__))                \
-         = { TOK, v_##VERBNAME };       \
-    int v_##VERBNAME(void)
-
-extern verb __start_verbs[];
-extern verb __stop_verbs[];
+#define _VERB(TOK, VERBNAME) extern int v_##VERBNAME(void); \
+  verb verb_##VERBNAME __attribute__((__section__("verbs"))) __attribute__((__used__)) = { TOK, v_##VERBNAME }; \
+  int v_##VERBNAME(void)
 
 verb *find(const char *tok) {
     DO(__stop_verbs-__start_verbs, if(!strcasecmp(__start_verbs[i].name, PAD)) return &__start_verbs[i]);
     return NULL;
 }
 
-//
-// arrays
-//
+// --- arrays ---
 int tr(int rank, int dims[rank]) { i64 z=1; DO(rank, z*=dims[i]); return z; }
 array *redim(array *a, int stride) {
     if (!a) { a=alloc(sizeof(array)); bzero(a, sizeof(*a)); a->rank=1; }
@@ -83,12 +72,8 @@ array *reshape(array *a, int dim) { a=redim(a, dim); a->dims[0]=dim; return a; }
 void append(array *A, i64 v) { redim(A, $A+1); A->vals[$A++] = v; }
 void print(array *A) { PR("[ "); DO1(A, PR("%lld ", A_i)); PR("]"); cr(); }
 
-//
-// REPL
-//
-
-int parse(char *out, const char *input) {
-    // return number of chars parsed into PAD
+// --- REPL ---
+int parse(char *out, const char *input) { // return number of chars parsed into out
     const char *s = input;
     while (*s && isspace(*s)) ++s; // skip spaces
     while (*s && !isspace(*s)) *out++ = *s++; // copy non-spaces
@@ -96,7 +81,7 @@ int parse(char *out, const char *input) {
     return s - input;
 }
 
-array *interpret(char *input) {
+void interpret(char *input) {
     while (*input) {
         int i = parse(PAD, input);
         if (!*PAD) break;
@@ -111,15 +96,19 @@ array *interpret(char *input) {
         }
         input += i;
     }
-    return peek(0);
 }
 
 int main()
 {
     char s[128];
-    while(fgets(s, sizeof(s), stdin)) { PR("   DEPTH=%ld >>>  %s", DEPTH, s); interpret(s); if (DEPTH) print(peek(0)); }
+    while(fgets(s, sizeof(s), stdin)) {
+        PR("   DEPTH=%ld >>>  %s", DEPTH, s);
+        interpret(s);
+        if (DEPTH) print(peek(0));
+    }
 }
 
+// --- mapl ---
 #define VERB(T, N, STMT) _VERB(T, N) { STMT; return 0; }
 #define UNOP(T, N, STMT)  _VERB(T, N) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
 #define BINOP(T, N, STMT) _VERB(T, N) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
