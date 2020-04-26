@@ -3,7 +3,7 @@ test: mapl tests.mapl
 
 test-golden.txt: mapl tests.mapl
 	cat tests.mapl | ./mapl | tee $@
-	git diff tests-golden.txt
+	git diff $@
 
 mapl: main.c
 	gcc -ggdb -o $@ $<
