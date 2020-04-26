@@ -11,7 +11,7 @@ typedef long long int i64;
 #define MIN(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a < _b ? _a : _b; })
 #define DO(n,x) {int i=0,_n=(n);for(;i<_n;++i){x;}}
 #define LEN(X) (sizeof(X)/sizeof((X)[0]))
-#define P(X) ({ i64 _x = (X); printf("[%lld] ", _x); _x; })
+#define P(X) ({ i64 _x = (X); printf("["#X"=%lld] ", _x); _x; })
 
 
 typedef struct array {
@@ -101,7 +101,7 @@ array *interpret(char *input) {
 int main()
 {
     char s[128];
-    while(fgets(s, sizeof(s), stdin)) { printf("   >>>  %s", s); print(interpret(s)); }
+    while(fgets(s, sizeof(s), stdin)) { P(DEPTH); printf("   >>>  %s", s); interpret(s); if (DEPTH) print(peek(0)); }
 }
 
 #define $A A->n
@@ -114,6 +114,7 @@ int main()
 #define BINOP(T, N, STMT) _VERB(T, N) { array *B=pop(); array *A=peek(0); DO(MAX($A, $B), STMT); return 0; } // A B -> A?B
 
 VERB("dup", dup, push(peek(0)))
+VERB("drop", drop, pop())
 BINOP("+", add, A_i += B_i)
 BINOP("*", mult, A_i *= B_i)
 BINOP("==", equals, A_i = (A_i == B_i))
