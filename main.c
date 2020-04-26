@@ -29,6 +29,9 @@ typedef struct array {
 
 #define $A A->dims[0]
 #define $B B->dims[0]
+#define $$A A->rank
+#define $$B B->rank
+
 #define A_i A->vals[i%$A]
 #define B_i B->vals[i%$B]
 
@@ -62,32 +65,35 @@ verb *find(const char *tok) {
 
 // --- arrays ---
 void copy(INT *d, INT *s, int n) { DO(n, d[i]=s[i]); }
+void revcopy(INT *d, INT *s, int n) { DO(n, d[n-i-1]=s[i]); }
 int tr(int rank, INT dims[rank]) { i64 z=1; DO(rank, z*=dims[i]); return z; }
-array *redim(array *a, int stride) {
+array *redim(array *a, int rank, INT strides[rank]) {
     if (!a) { a=alloc(sizeof(array)); bzero(a, sizeof(*a)); a->rank=1; }
-    INT outer = stride ? stride : 1;
-    if (outer > tr(a->rank, a->strides)) { a->vals=realloc(a->vals, sizeof(*a->vals)*(tr(1, &outer))); assert(a->vals); }
-    a->rank=1; a->strides[0]=stride;
+    INT total = tr(rank, strides);
+    if (total > tr(a->rank, a->strides)) { a->vals=realloc(a->vals, sizeof(*a->vals)*total); assert(a->vals); }
+    a->rank=rank;
+    copy(a->strides, strides, rank);
     return a;
 }
-array *reshape(array *a, int dim) { a=redim(a, dim); a->dims[0]=dim; return a; }
-void append(array *A, i64 v) { redim(A, $A+1); A->vals[$A++] = v; }
-void printshape(array *A) { PR("{ "); DO(A->rank, PR("%lld/%lldx", A->dims[i], A->strides[i])); PR(" }"); }
+array *reshape(array *a, int rank, INT dims[rank]) {
+    INT revdims[rank];
+    revcopy(revdims, dims, rank);
+    a=redim(a, rank, revdims);
+    copy(a->dims, revdims, rank);
+    return a;
+}
+void append(array *A, i64 v) { INT s[A->rank]; copy(s, A->strides, A->rank); s[0]++; redim(A, A->rank, s); A->vals[$A++] = v; }
 void print_rank(array *A, int n) {
     if (!A) { PR("(null) "); return; }
-    PR("[ ");
-    if (n >= A->rank) { DO1(A, PR("%lld ", *p)); }
+    if (n == 1) { DO1(A, PR("%lld ", *p)); }
     else {
-        int r = A->rank-n;
         array inner = *A;
-        inner.rank = r;
-        DO(A->dims[r], inner.vals=&A->vals[i*A->strides[r-1]]; print_rank(&inner, r+1));
+        inner.rank = n-1;
+        DO(A->dims[n-1], inner.vals=&A->vals[i*A->strides[n-2]]; print_rank(&inner, n-1));
     }
-
-    PR("]");
     cr();
 }
-void print(array *A) { print_rank(A, 1); }
+void print(array *A) { print_rank(A, A->rank); }
 
 // --- REPL ---
 int parse(char *out, const char *input) { // return number of chars parsed into out
@@ -136,8 +142,8 @@ BINOP("+", add, A_i += B_i)
 BINOP("*", mult, A_i *= B_i)
 BINOP("==", equals, A_i = (A_i == B_i))
 VERB(".S", printstack, DO(DEPTH, print(peek(i))))
-VERB("[", pusharray, push(redim(NULL, 0)))
-UNOP("iota", iota, B=push(reshape(NULL, A->vals[0])); DO1(B, *p=i))
+VERB("[", pusharray, push(redim(NULL, 0, 0)))
+UNOP("iota", iota, B=push(reshape(NULL, $A, A->vals)); DO1(B, *p=i))
 UNOP(".", print, print(A))
 UNOP("??", check, DO1(A, assert(A_i)))
-VERB("reshape", reshape, B=pop(); A=peek(0); copy(A->dims, B->vals, $B); copy(A->strides, B->vals, $B); A->rank=$B)
+VERB("reshape", reshape, B=pop(); A=peek(0); reshape(A, $B, B->vals))
