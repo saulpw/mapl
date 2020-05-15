@@ -83,6 +83,8 @@ array *reshape(array *A, int rank, INT dims[rank]) {
     return A;
 }
 void append(array *A, i64 v) { INT s[A->rank]; copy(s, A->strides, A->rank); s[0]++; redim(A, A->rank, s); A->vals[$A++] = v; }
+array *boxint(INT v) { INT x=1; array *A=redim(NULL, 1, &x); append(A, v); return A; }
+
 void print_rank(array *A, int n) {
     if (!A) { PR("(null) "); return; }
     if (n == 1) { DO1(A, PR("%lld ", *p)); }
@@ -147,3 +149,4 @@ UNOP("iota", iota, B=push(reshape(NULL, $A, A->vals)); DO1(B, *p=i))
 UNOP(".", print, print(A))
 UNOP("??", check, DO1(A, assert(A_i)))
 VERB("reshape", reshape, B=pop(); A=peek(0); reshape(A, $B, B->vals))
+UNOP("*/", mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))

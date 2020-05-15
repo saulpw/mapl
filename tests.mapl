@@ -3,3 +3,5 @@
 [ 5 DUP . iota [ 5 iota +
 [ 5 iota [ 5 iota +  [ 5 iota [ 2 * ==
 [ 6 iota [ 2 3 reshape
+
+[ 8 iota [ 1 + */
