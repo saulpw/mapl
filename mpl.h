@@ -54,9 +54,6 @@ typedef struct array {
 #define $$A A->rank
 #define $$B B->rank
 
-#define A_i A->vals[i%$A]
-#define B_i B->vals[i%$B]
-
 // loop over each cell in X or X|Y
 #define DO1(X, STMT) DO(tr((X)->rank, (X)->dims), i64 *p=&(X)->vals[i]; STMT)
 #define DO2(X, Y, STMT) int X_n=tr((X)->rank, (X)->dims), Y_n=tr((Y)->rank, (Y)->dims); DO(MAX(X_n, Y_n), i64 *p=&(X)->vals[i]; STMT)

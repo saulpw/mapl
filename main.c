@@ -7,18 +7,18 @@
 
 char PAD[128];
 
-werb *LATEST = NULL;
-
 DAT STACK[16];
 RET RSTACK[16];
-DAT *SP = STACK;
-RET *RP = RSTACK;
+DAT *SP;
+RET *RP;
 
-XT *IP = NULL;
+XT *IP;
 
 char dict[8192];
 char *DP = dict;
-int STATE=0;
+werb *LATEST = NULL;
+
+int COMPILING=0;
 
 WERB("BYE",      BYE,    exit(0))
 WERB("DUP",      DUP,    push(peek(0)))
@@ -48,6 +48,7 @@ array *reshape(array *A, int rank, INT dims[rank]) {
     copy(A->dims, revdims, rank);
     return A;
 }
+
 void append(array *A, i64 v) { INT s[A->rank]; copy(s, A->strides, A->rank); s[0]++; redim(A, A->rank, s); A->vals[$A++] = v; }
 INT unboxint(array *A) { assert($$A == 1 && $A == 1); return A->vals[0]; }
 array *boxint(INT v) { INT x=1; array *A=redim(NULL, 1, &x); append(A, v); return A; }
@@ -119,8 +120,8 @@ WERB("CREATE", CREATE,
         w->func=f_ENTER; w->args=(void *) DP;
         w->prev=LATEST; LATEST=w)
 
-WERB(":", COLON, f_CREATE(0); STATE=1)
-IWERB(";", SEMICOLON, compile(&wEXIT); STATE=0)
+WERB(":", COLON, f_CREATE(0); COMPILING=1)
+IWERB(";", SEMICOLON, compile(&wEXIT); COMPILING=0)
 WERB("IMMEDIATE", IMMEDIATE, LATEST->flags=1)
 
 // parse single token from input buffer, and either parse+append number, or find+execute word
@@ -131,7 +132,7 @@ _WERB(0, "INTERPRET", INTERPRET, NULL) {
     char *endptr = NULL;
     i64 val = strtoll(PAD, &endptr, 0);
     if (endptr != PAD) { // some valid number
-        if (STATE) {
+        if (COMPILING) {
             compile(&wDOLIT);
             compile((void *) val);
         } else {
@@ -140,8 +141,15 @@ _WERB(0, "INTERPRET", INTERPRET, NULL) {
     } else {
         werb *w = find(PAD);
         if (!w) { PR("unknown: %s\n", PAD); }
-        else { if (STATE && !w->flags) compile(w); else w->func(w); }
+        else { if (COMPILING && !w->flags) compile(w); else w->func(w); }
     }
+    return 0;
+}
+
+_WERB(0, "ABORT", ABORT, NULL) {
+    SP = STACK;
+    RP = RSTACK;
+    IP = find("QUIT")->args;
     return 0;
 }
 
@@ -152,19 +160,22 @@ werb w_QUIT SECTION(werbs) = { .name="QUIT", .func=f_ENTER, .args=QUIT_args };
 
 #define UNOP(T, N, STMT)  _WERB(0, T, N, NULL) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
 #define BINOP(T, N, STMT) _WERB(0, T, N, NULL) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
-BINOP("+", add, A_i += B_i)
-BINOP("*", mult, A_i *= B_i)
-BINOP("==", equals, A_i = (A_i == B_i))
+
+#define A_i A->vals[i%$A]
+#define B_i B->vals[i%$B]
+
+BINOP("+",   add,    A_i += B_i)
+BINOP("*",   mult,   A_i *= B_i)
+BINOP("==",  equals, A_i = (A_i == B_i))
+UNOP(".",    print,  print(A))
+UNOP("??",   check,  DO1(A, assert(A_i)))
+UNOP("*/",   mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))
 UNOP("iota", iota, B=push(reshape(NULL, $A, A->vals)); DO1(B, *p=i))
-UNOP(".", print, print(A))
-UNOP("??", check, DO1(A, assert(A_i)))
 UNOP("reshape", reshape, B=peek(0); reshape(B, $A, A->vals))
-UNOP("*/", mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))
 
-int main()
+void main()
 {
-    IP = find("QUIT")->args;
-
+    f_ABORT(0);
     while (1) {
         werb *w = LOAD(werb *);
         assert(!w->func(w));
