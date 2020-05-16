@@ -9,6 +9,8 @@ typedef long long int i64;
 #define INT i64
 #define alloc malloc
 
+#define CAT(a,b) a##b
+#define XCAT(a,b) CAT(a,b)
 #define MAX(X,Y) ({ __typeof__ (X) _x = (X); __typeof__ (Y) _y = (Y); _x > _y ? _x : _y; })
 #define MIN(X,Y) ({ __typeof__ (X) _x = (X); __typeof__ (Y) _y = (Y); _x < _y ? _x : _y; })
 #define DO(N,STMT) {int i=0,_n=(N);for(;i<_n;++i){STMT;}}
@@ -16,9 +18,8 @@ typedef long long int i64;
 #define PR(X...) do { printf(X); fflush(stdout); } while (0)
 #define PINT(X) ({ i64 _x = (X); PR("["#X"=%lld] ", _x); _x; })
 
-// loop over each cell in X
+// loop over each cell in X or X|Y
 #define DO1(X, STMT) DO(tr((X)->rank, (X)->dims), i64 *p=&(X)->vals[i]; STMT)
-// loop over each cell in X|Y
 #define DO2(X, Y, STMT) int X_n=tr((X)->rank, (X)->dims), Y_n=tr((Y)->rank, (Y)->dims); DO(MAX(X_n, Y_n), i64 *p=&(X)->vals[i]; STMT)
 
 typedef struct array {
@@ -39,48 +40,56 @@ typedef struct array {
 // --- dict ---
 char PAD[128];
 
-struct verb;
-typedef int (verbfunc)(struct verb *);
-typedef struct verb {
+struct werb;
+typedef int (werbfunc)(struct werb *);
+typedef struct werb {
     char flags;
     char name[39];
-    struct verb *prev;
-    verbfunc *func;
-    struct verb **args;
-} verb;
-extern verb __start_verbs[], __stop_verbs[];
+    struct werb *prev;
+    werbfunc *func;
+    struct werb **args;
+} werb;
+extern werb __start_werbs[], __stop_werbs[];
 
-verb *LATEST = NULL;
+werb *LATEST = NULL;
 
-#define _VERB(FLAGS, TOK, VERBNAME, ARGS) extern int v_##VERBNAME(verb *v); \
-  verb verb_##VERBNAME __attribute__((__section__("verbs"))) __attribute__((__used__)) = { .flags=FLAGS, .name=TOK, .func=v_##VERBNAME, .args=ARGS }; \
-  int v_##VERBNAME(verb *v)
+#define _WERB(FLAGS, NAME, CTOK, ARGS) \
+  extern int f##CTOK(werb *w); \
+  werb w##CTOK __attribute__((__section__("werbs"))) __attribute__((__used__)) = { .flags=FLAGS, .name=NAME, .func=f##CTOK, .args=ARGS }; \
+  int f##CTOK(werb *w)
 
-verb *find(const char *tok) {
-    verb *v = LATEST;
-    while (v) { if(!strcasecmp(v->name, tok)) return v; else v=v->prev; }
-    DO(__stop_verbs-__start_verbs, if(!strcasecmp(__start_verbs[i].name, tok)) return &__start_verbs[i]);
+#define DEF(NAME, ARGS...) \
+  XT XCAT(wargs, __LINE__)[] = { ARGS }; \
+  werb XCAT(w, __LINE__) __attribute__((__section__("werbs"))) __attribute__((__used__)) = { .name=NAME, .func=fENTER, .args=XCAT(wargs, __LINE__) };
+
+werb *find(const char *tok) {
+    werb *w = LATEST;
+    while (w) { if(!strcasecmp(w->name, tok)) return w; else w=w->prev; }
+    DO(__stop_werbs-__start_werbs, if(!strcasecmp(__start_werbs[i].name, tok)) return &__start_werbs[i]);
     return NULL;
 }
 
 // --- stacks and forth internals ---
-array *STACK[16];
-array **SP = STACK;
-#define DEPTH (SP-STACK)
-array *push(array *a) { *SP++ = a; return a; }
-array *pop(void) { assert(DEPTH > 0); return *--SP; }
-array *peek(int n) { assert(DEPTH >= n); return *(SP-n-1); }
+typedef array *S;
 
-void cr(void) { PR("\n"); }
+S STACK[16];
+S *SP = STACK;
+#define DEPTH (SP-STACK)
+S push(S a) { *SP++ = a; return a; }
+S pop(void) { assert(DEPTH > 0); return *--SP; }
+S peek(int n) { assert(DEPTH >= n); return *(SP-n-1); }
+
 
 // --- return stack ---
-verb **RSTACK[16];
-verb ***RP = RSTACK;
+typedef werb *XT;
+typedef XT *R;
+R RSTACK[16];
+R *RP = RSTACK;
 #define RDEPTH (RP-RSTACK)
-verb **rpush(verb **ptr) { *RP++ = ptr; return ptr; }
-verb **rpop(void) { assert(RDEPTH > 0); return *--RP; }
+R rpush(R r) { *RP++ = r; return r; }
+R rpop(void) { assert(RDEPTH > 0); return *--RP; }
 
-verb **IP = NULL;
+XT *IP = NULL;
 
 char _TIB[128];
 char *TIB = _TIB;
@@ -113,7 +122,6 @@ void append(array *A, i64 v) { INT s[A->rank]; copy(s, A->strides, A->rank); s[0
 INT unboxint(array *A) { assert($$A == 1 && $A == 1); return A->vals[0]; }
 array *boxint(INT v) { INT x=1; array *A=redim(NULL, 1, &x); append(A, v); return A; }
 #define boxptr(P) boxint ((INT) (P))
-INT popi(void) { assert(DEPTH > 0); return unboxint(pop()); }
 
 void print_rank(array *A, int n) {
     if (!A) { PR("(null) "); return; }
@@ -123,7 +131,7 @@ void print_rank(array *A, int n) {
         inner.rank = n-1;
         DO(A->dims[n-1], inner.vals=&A->vals[i*A->strides[n-2]]; print_rank(&inner, n-1));
     }
-    cr();
+    PR("\n");
 }
 void print(array *A) { print_rank(A, A->rank); }
 
@@ -132,38 +140,13 @@ void print(array *A) { print_rank(A, A->rank); }
 void *allot(int n) { void *ptr=DP; DP += n; return ptr; }
 int compile(void *ptr) { void **r = allot(sizeof(ptr)); *r = ptr; return 0; }
 
-#define CAT(a,b) a##b
-#define XCAT(a,b) CAT(a,b)
-#define DEF(TOK, ARGS...) \
-  verb *XCAT(verb_args, __LINE__)[] = { ARGS }; \
-  verb XCAT(verb_, __LINE__) __attribute__((__section__("verbs"))) __attribute__((__used__)) = { .name=TOK, .func=v_enter, .args=XCAT(verb_args, __LINE__) };
-
 // --- mapl ---
-#define WORD(T, N, STMT) _VERB(0, T, N, NULL) { STMT; return 0; }
-#define IMMEDWORD(T, N, STMT) _VERB(1, T, N, NULL) { STMT; return 0; }
-#define VERB(T, N, STMT) _VERB(0, T, N, NULL) { array *A=NULL, *B=NULL; STMT; return 0; }
-#define UNOP(T, N, STMT)  _VERB(0, T, N, NULL) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
-#define BINOP(T, N, STMT) _VERB(0, T, N, NULL) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
+#define WERB(T, N, STMT) _WERB(0, T, N, NULL) { STMT; return 0; }
+#define IWERB(T, N, STMT) _WERB(1, T, N, NULL) { STMT; return 0; }
+#define UNOP(T, N, STMT)  _WERB(0, T, N, NULL) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
+#define BINOP(T, N, STMT) _WERB(0, T, N, NULL) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
 
-WORD("DOLITERAL", DOLITERAL, push(boxint((INT) *IP++)))
-WORD("dup", dup, push(peek(0)))
-WORD("drop", drop, pop())
-WORD("ENTER", enter, rpush(IP); IP = v->args)
-WORD("EXIT", exit,  IP = rpop())
-WORD("(BRANCH)", branch, INT i=(INT) *IP++; IP += i)
-
-BINOP("+", add, A_i += B_i)
-BINOP("*", mult, A_i *= B_i)
-BINOP("==", equals, A_i = (A_i == B_i))
-WORD(".S", printstack, DO(DEPTH, print(peek(i))))
-WORD("[", pusharray, INT x=0; push(redim(NULL, 1, &x)))
-UNOP("iota", iota, B=push(reshape(NULL, $A, A->vals)); DO1(B, *p=i))
-UNOP(".", print, print(A))
-UNOP("??", check, DO1(A, assert(A_i)))
-VERB("reshape", reshape, B=pop(); A=peek(0); reshape(A, $B, B->vals))
-UNOP("*/", mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))
-
-WORD("BYE", BYE, exit(0))
+WERB("BYE", BYE, exit(0))
 
 int matches(int fl, int ch) {
     if (fl) return (fl == ch);
@@ -179,7 +162,7 @@ void parse(int ch, char *_out)
         while (NUMTIB && !matches(ch, *TIB)) { --NUMTIB; *out++ = *TIB++; } // copy non-spaces
         if (!NUMTIB) {
             NUMTIB = fread(_TIB, 1, sizeof(_TIB), stdin);
-            if (NUMTIB <= 0) v_BYE(0);
+            if (NUMTIB <= 0) fBYE(0);
             TIB = _TIB;
         } else if (out-_out) {
             *out = 0;
@@ -189,52 +172,69 @@ void parse(int ch, char *_out)
     }
 }
 
-_VERB(0, "PARSE", PARSE, NULL) { parse(popi(), PAD); push(boxptr(PAD)); }
+_WERB(0, "PARSE", PARSE, NULL) { parse(unboxint(pop()), PAD); push(boxptr(PAD)); }
+WERB("DOLIT", DOLIT, push(boxint((INT) *IP++)))
+WERB("DUP", DUP, push(peek(0)))
+WERB("DROP", DROP, pop())
+WERB("ENTER", ENTER, rpush(IP); IP=w->args)
+WERB("EXIT", EXIT,  IP = rpop())
+WERB("(BRANCH)", BRANCH, INT i=(INT) *IP++; IP += i)
+WERB(".S", printstack, DO(DEPTH, print(peek(i))))
+WERB("[", pusharray, INT x=0; push(redim(NULL, 1, &x)))
 
-WORD("CREATE", create,
+WERB("CREATE", CREATE,
         parse(0, PAD);
-        v=allot(sizeof(verb));
-        strncpy(v->name, PAD, sizeof(v->name));
-        v->prev=LATEST;
-        v->func=v_enter;
-        v->args=(void *) DP;
-        LATEST=v
+        w=allot(sizeof(werb));
+        strncpy(w->name, PAD, sizeof(w->name));
+        w->prev=LATEST;
+        w->func=fENTER;
+        w->args=(void *) DP;
+        LATEST=w
         )
 
-
-WORD(":", COLON, v_create(0); STATE=1)
-IMMEDWORD(";", SEMICOLON, compile(&verb_exit); STATE=0)
-WORD("IMMEDIATE", IMMEDIATE, LATEST->flags=1)
-
-int main()
-{
-    IP = find("QUIT")->args;
-
-    while (1) {
-        verb *v = *IP++;
-        v->func(v);
-    }
-}
 // parse single token from input buffer, and either parse+append number, or find+execute word
 // return -1 if more input needed.
-_VERB(0, "interpret_word", interpret_word, NULL) {
+_WERB(0, "INTERPRET", INTERPRET, NULL) {
     parse(0, PAD);
 
     char *endptr = NULL;
     i64 val = strtoll(PAD, &endptr, 0);
     if (endptr != PAD) { // some valid number
         if (STATE) {
-            compile(&verb_DOLITERAL);
+            compile(&wDOLIT);
             compile((void *) val);
         } else {
             append(peek(0), val);
         }
     } else {
-        verb *v = find(PAD);
-        if (!v) { PR("unknown: %s\n", PAD); }
-        else { if (STATE && !v->flags) compile(v); else v->func(v); }
+        werb *w = find(PAD);
+        if (!w) { PR("unknown: %s\n", PAD); }
+        else { if (STATE && !w->flags) compile(w); else w->func(w); }
     }
     return 1;
 }
 
-DEF("QUIT", &verb_interpret_word, &verb_branch, (verb *) -3);
+WERB(":", COLON, fCREATE(0); STATE=1)
+IWERB(";", SEMICOLON, compile(&wEXIT); STATE=0)
+WERB("IMMEDIATE", IMMEDIATE, LATEST->flags=1)
+
+DEF("QUIT", &wINTERPRET, &wBRANCH, (XT) -3);
+
+int main()
+{
+    IP = find("QUIT")->args;
+
+    while (1) {
+        werb *w = *IP++;
+        w->func(w);
+    }
+}
+
+BINOP("+", add, A_i += B_i)
+BINOP("*", mult, A_i *= B_i)
+BINOP("==", equals, A_i = (A_i == B_i))
+UNOP("iota", iota, B=push(reshape(NULL, $A, A->vals)); DO1(B, *p=i))
+UNOP(".", print, print(A))
+UNOP("??", check, DO1(A, assert(A_i)))
+UNOP("reshape", reshape, B=peek(0); reshape(B, $A, A->vals))
+UNOP("*/", mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))
