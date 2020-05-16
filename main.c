@@ -42,17 +42,23 @@ struct verb;
 typedef int (verbfunc)(struct verb *);
 typedef struct verb {
     const char *name;
+    struct verb *prev;
     verbfunc *func;
     struct verb **args;
-    void *padding; // need to make struct aligned for section alignment
+    char flags;
+    char padding[31];
 } verb;
 extern verb __start_verbs[], __stop_verbs[];
 
-#define _VERB(TOK, VERBNAME, ARGS) extern int v_##VERBNAME(verb *v); \
-  verb verb_##VERBNAME __attribute__((__section__("verbs"))) __attribute__((__used__)) = { TOK, v_##VERBNAME, ARGS }; \
+verb *LATEST = NULL;
+
+#define _VERB(FLAGS, TOK, VERBNAME, ARGS) extern int v_##VERBNAME(verb *v); \
+  verb verb_##VERBNAME __attribute__((__section__("verbs"))) __attribute__((__used__)) = { .flags=FLAGS, .name=TOK, .func=v_##VERBNAME, .args=ARGS }; \
   int v_##VERBNAME(verb *v)
 
 verb *find(const char *tok) {
+    verb *v = LATEST;
+    while (v) { if(!strcasecmp(v->name, tok)) return v; else v=v->prev; }
     DO(__stop_verbs-__start_verbs, if(!strcasecmp(__start_verbs[i].name, tok)) return &__start_verbs[i]);
     return NULL;
 }
@@ -78,6 +84,9 @@ verb **IP = NULL;
 
 const char *TIB = NULL;
 
+char dict[8192];
+char *DP = dict;
+int STATE=0;
 
 // --- arrays ---
 void copy(INT *d, INT *s, int n) { DO(n, d[i]=s[i]); }
@@ -122,10 +131,9 @@ int parse(char *out, const char *input) { // return number of chars parsed into 
     return s - input;
 }
 
-_VERB("accept", accept, NULL) {
+_VERB(0, "accept", accept, NULL) {
     static char s[128];
     if (!fgets(s, sizeof(s), stdin)) {
-        perror("stdin");
         exit(0);
     }
     PR("   DEPTH=%ld >>>  %s", DEPTH, s);
@@ -133,41 +141,51 @@ _VERB("accept", accept, NULL) {
     return 0;
 }
 
-// parse single token from input buffer, and either parse+append number, or find+execute word
-// return -1 if more input needed.
-_VERB("interpret_word", interpret_word, NULL) {
-    if (!TIB || !TIB[0]) { goto getline; }
-
-    int i = parse(PAD, TIB);
-    if (!*PAD) { goto getline; }
-
-    char *endptr = NULL;
-    i64 val = strtoll(PAD, &endptr, 0);
-    if (endptr != PAD) { // some valid number
-        append(peek(0), val);
-    } else {
-        verb *v = find(PAD);
-        if (!v) { PR("unknown: %s\n", PAD); }
-        else { v->func(v); }
-    }
-    TIB += i;
-    return 1;
-getline:
-    v_accept(NULL);
-    return v_interpret_word(v);
-}
+void *allot(int n) { void *ptr=DP; DP += n; return ptr; }
+int compile(void *ptr) { void **r = allot(sizeof(ptr)); *r = ptr; return 0; }
 
 #define CAT(a,b) a##b
 #define XCAT(a,b) CAT(a,b)
 #define DEF(TOK, ARGS...) \
   verb *XCAT(verb_args, __LINE__)[] = { ARGS }; \
-  verb XCAT(verb_, __LINE__) __attribute__((__section__("verbs"))) __attribute__((__used__)) = { TOK, v_enter, XCAT(verb_args, __LINE__) };
+  verb XCAT(verb_, __LINE__) __attribute__((__section__("verbs"))) __attribute__((__used__)) = { .name=TOK, .func=v_enter, .args=XCAT(verb_args, __LINE__) };
 
 // --- mapl ---
-#define WORD(T, N, STMT) _VERB(T, N, NULL) { STMT; return 0; }
-#define VERB(T, N, STMT) _VERB(T, N, NULL) { array *A=NULL, *B=NULL; STMT; return 0; }
-#define UNOP(T, N, STMT)  _VERB(T, N, NULL) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
-#define BINOP(T, N, STMT) _VERB(T, N, NULL) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
+#define WORD(T, N, STMT) _VERB(0, T, N, NULL) { STMT; return 0; }
+#define IMMEDWORD(T, N, STMT) _VERB(1, T, N, NULL) { STMT; return 0; }
+#define VERB(T, N, STMT) _VERB(0, T, N, NULL) { array *A=NULL, *B=NULL; STMT; return 0; }
+#define UNOP(T, N, STMT)  _VERB(0, T, N, NULL) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
+#define BINOP(T, N, STMT) _VERB(0, T, N, NULL) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
+
+WORD("DOLITERAL", DOLITERAL, append(peek(0), (INT) *IP++))
+
+// parse single token from input buffer, and either parse+append number, or find+execute word
+// return -1 if more input needed.
+_VERB(0, "interpret_word", interpret_word, NULL) {
+    if (!TIB || !TIB[0]) { goto getline; }
+
+    TIB += parse(PAD, TIB);
+    if (!*PAD) { goto getline; }
+
+    char *endptr = NULL;
+    i64 val = strtoll(PAD, &endptr, 0);
+    if (endptr != PAD) { // some valid number
+        if (STATE) {
+            compile(&verb_DOLITERAL);
+            compile((void *) val);
+        } else {
+            append(peek(0), val);
+        }
+    } else {
+        verb *v = find(PAD);
+        if (!v) { PR("unknown: %s\n", PAD); }
+        else { if (STATE && !v->flags) compile(v); else v->func(v); }
+    }
+    return 1;
+getline:
+    v_accept(NULL);
+    return v_interpret_word(v);
+}
 
 WORD("dup", dup, push(peek(0)))
 WORD("drop", drop, pop())
@@ -187,7 +205,23 @@ VERB("reshape", reshape, B=pop(); A=peek(0); reshape(A, $B, B->vals))
 UNOP("*/", mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))
 
 DEF("QUIT", &verb_interpret_word, &verb_branch, (verb *) -3);
-DEF("SQUARE", &verb_dup, &verb_mult, &verb_exit)
+//DEF("SQUARE", &verb_dup, &verb_mult, &verb_exit)
+WORD("CREATE", create,
+        char *name=DP;
+        int i=parse(DP, TIB);
+        TIB += i;
+        DP += i;
+        *DP++ = 0;
+        v=allot(sizeof(verb));
+        v->name=name;
+        v->prev=LATEST;
+        v->func=v_enter;
+        v->args=(void *) DP;
+        LATEST=v
+        )
+
+WORD(":", COLON, v_create(0); STATE=1)
+IMMEDWORD(";", SEMICOLON, compile(&verb_exit); STATE=0)
 
 int main()
 {
