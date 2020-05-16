@@ -1,23 +1,13 @@
-#include <assert.h>
 #include <ctype.h>
 #include <string.h>
-#include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
 
 #include "mpl.h"
 
-// --- dict ---
 char PAD[128];
 
 werb *LATEST = NULL;
-
-werb *find(const char *tok) {
-    werb *w = LATEST;
-    while (w) { if(!strcasecmp(w->name, tok)) return w; else w=w->prev; }
-    DO(__stop_werbs-__start_werbs, if(!strcasecmp(__start_werbs[i].name, tok)) return &__start_werbs[i]);
-    return NULL;
-}
 
 DAT STACK[16];
 RET RSTACK[16];
@@ -30,9 +20,18 @@ char dict[8192];
 char *DP = dict;
 int STATE=0;
 
-// --- arrays ---
-void copy(INT *d, INT *s, int n) { DO(n, d[i]=s[i]); }
+WERB("BYE",      BYE,    exit(0))
+WERB("DUP",      DUP,    push(peek(0)))
+WERB("DROP",     DROP,   pop())
+WERB("ENTER",    ENTER,  rpush(IP); IP=w->args)
+WERB("EXIT",     EXIT,   IP=rpop())
+WERB("(BRANCH)", BRANCH, INT i=(INT) *IP++; IP += i)
+
+void    copy(INT *d, INT *s, int n) { DO(n, d[i]=s[i]); }
 void revcopy(INT *d, INT *s, int n) { DO(n, d[n-i-1]=s[i]); }
+
+// --- arrays ---
+
 int tr(int rank, INT dims[rank]) { i64 z=1; DO(rank, z*=dims[i]); return z; }
 array *redim(array *A, int rank, INT strides[rank]) {
     if (!A) { A=alloc(sizeof(array)); bzero(A, sizeof(*A)); A->rank=1; }
@@ -66,18 +65,17 @@ void print_rank(array *A, int n) {
 }
 void print(array *A) { print_rank(A, A->rank); }
 
-// --- REPL ---
+// --- dict ---
 
 void *allot(int n) { void *ptr=DP; DP += n; return ptr; }
 int compile(void *ptr) { void **r = allot(sizeof(ptr)); *r = ptr; return 0; }
 
-// --- mapl ---
-#define WERB(T, N, STMT) _WERB(0, T, N, NULL) { STMT; return 0; }
-#define IWERB(T, N, STMT) _WERB(1, T, N, NULL) { STMT; return 0; }
-#define UNOP(T, N, STMT)  _WERB(0, T, N, NULL) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
-#define BINOP(T, N, STMT) _WERB(0, T, N, NULL) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
-
-WERB("BYE", BYE, exit(0))
+werb *find(const char *tok) {
+    werb *w = LATEST;
+    while (w) { if(!strcasecmp(w->name, tok)) return w; else w=w->prev; }
+    DO(__stop_werbs-__start_werbs, if(!strcasecmp(__start_werbs[i].name, tok)) return &__start_werbs[i]);
+    return NULL;
+}
 
 int matches(int fl, int ch) {
     if (fl) return (fl == ch);
@@ -97,7 +95,7 @@ void parse(int ch, char *_out)
         while (NUMTIB && !matches(ch, *TIB)) { --NUMTIB; *out++ = *TIB++; } // copy non-spaces
         if (!NUMTIB) {
             NUMTIB = fread(_TIB, 1, sizeof(_TIB), stdin);
-            if (NUMTIB <= 0) fBYE(0);
+            if (NUMTIB <= 0) f_BYE(0);
             TIB = _TIB;
         } else if (out-_out) {
             *out = 0;
@@ -109,11 +107,6 @@ void parse(int ch, char *_out)
 
 WERB("PARSE", PARSE, parse(unboxint(pop()), PAD); push(boxptr(PAD)))
 WERB("DOLIT", DOLIT, push(boxint((INT) *IP++)))
-WERB("DUP", DUP, push(peek(0)))
-WERB("DROP", DROP, pop())
-WERB("ENTER", ENTER, rpush(IP); IP=w->args)
-WERB("EXIT", EXIT,  IP=rpop())
-WERB("(BRANCH)", BRANCH, INT i=(INT) *IP++; IP += i)
 WERB(".S", printstack, DO(DEPTH, print(peek(i))))
 WERB("[", pusharray, INT x=0; push(redim(NULL, 1, &x)))
 
@@ -122,7 +115,7 @@ WERB("CREATE", CREATE,
         w=allot(sizeof(werb));
         strncpy(w->name, PAD, sizeof(w->name));
         w->prev=LATEST;
-        w->func=fENTER;
+        w->func=f_ENTER;
         w->args=(void *) DP;
         LATEST=w
         )
@@ -149,11 +142,23 @@ _WERB(0, "INTERPRET", INTERPRET, NULL) {
     return 0;
 }
 
-WERB(":", COLON, fCREATE(0); STATE=1)
+WERB(":", COLON, f_CREATE(0); STATE=1)
 IWERB(";", SEMICOLON, compile(&wEXIT); STATE=0)
 WERB("IMMEDIATE", IMMEDIATE, LATEST->flags=1)
 
-DEF("QUIT", &wINTERPRET, &wBRANCH, (XT) -3);
+XT QUIT_args[] = { &wINTERPRET, &wBRANCH, (XT) -3 };
+werb w_QUIT SECTION(werbs) = { .name="QUIT", .func=f_ENTER, .args=QUIT_args };
+
+#define UNOP(T, N, STMT)  _WERB(0, T, N, NULL) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
+#define BINOP(T, N, STMT) _WERB(0, T, N, NULL) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
+BINOP("+", add, A_i += B_i)
+BINOP("*", mult, A_i *= B_i)
+BINOP("==", equals, A_i = (A_i == B_i))
+UNOP("iota", iota, B=push(reshape(NULL, $A, A->vals)); DO1(B, *p=i))
+UNOP(".", print, print(A))
+UNOP("??", check, DO1(A, assert(A_i)))
+UNOP("reshape", reshape, B=peek(0); reshape(B, $A, A->vals))
+UNOP("*/", mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))
 
 int main()
 {
@@ -164,12 +169,3 @@ int main()
         assert(!w->func(w));
     }
 }
-
-BINOP("+", add, A_i += B_i)
-BINOP("*", mult, A_i *= B_i)
-BINOP("==", equals, A_i = (A_i == B_i))
-UNOP("iota", iota, B=push(reshape(NULL, $A, A->vals)); DO1(B, *p=i))
-UNOP(".", print, print(A))
-UNOP("??", check, DO1(A, assert(A_i)))
-UNOP("reshape", reshape, B=peek(0); reshape(B, $A, A->vals))
-UNOP("*/", mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))

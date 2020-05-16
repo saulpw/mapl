@@ -5,7 +5,7 @@ test-golden.txt: mapl tests.mapl
 	cat tests.mapl | ./mapl | tee $@
 	git diff $@
 
-mapl: main.c
+mapl: main.c mpl.h
 	gcc -ggdb -o $@ $<
 
 clean:

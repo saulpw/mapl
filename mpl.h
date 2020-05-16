@@ -1,6 +1,9 @@
 #ifndef MPL_H_
 #define MPL_H_
 
+#include <assert.h>
+#include <stdio.h>
+
 typedef long long int i64;
 #define INT i64
 #define alloc malloc
@@ -11,12 +14,12 @@ typedef long long int i64;
 #define MIN(X,Y) ({ __typeof__ (X) _x = (X); __typeof__ (Y) _y = (Y); _x < _y ? _x : _y; })
 #define DO(N,STMT) {int i=0,_n=(N);for(;i<_n;++i){STMT;}}
 #define LEN(X) (sizeof(X)/sizeof((X)[0]))
+
+#define SECTION(NAME) __attribute__((__section__(#NAME))) __attribute__((__used__))
 #define PR(X...) do { printf(X); fflush(stdout); } while (0)
 #define PINT(X) ({ i64 _x = (X); PR("["#X"=%lld] ", _x); _x; })
 
-// loop over each cell in X or X|Y
-#define DO1(X, STMT) DO(tr((X)->rank, (X)->dims), i64 *p=&(X)->vals[i]; STMT)
-#define DO2(X, Y, STMT) int X_n=tr((X)->rank, (X)->dims), Y_n=tr((Y)->rank, (Y)->dims); DO(MAX(X_n, Y_n), i64 *p=&(X)->vals[i]; STMT)
+// ---
 
 struct werb;
 typedef int (werbfunc)(struct werb *);
@@ -30,13 +33,14 @@ typedef struct werb {
 extern werb __start_werbs[], __stop_werbs[];
 
 #define _WERB(FLAGS, NAME, CTOK, ARGS) \
-  extern int f##CTOK(werb *w); \
-  werb w##CTOK __attribute__((__section__("werbs"))) __attribute__((__used__)) = { .flags=FLAGS, .name=NAME, .func=f##CTOK, .args=ARGS }; \
-  int f##CTOK(werb *w)
+  extern int f_##CTOK(werb *w); \
+  werb w##CTOK SECTION(werbs) = { .flags=FLAGS, .name=NAME, .func=f_##CTOK, .args=ARGS }; \
+  int f_##CTOK(werb *w)
 
-#define DEF(NAME, ARGS...) \
-  XT XCAT(wargs, __LINE__)[] = { ARGS }; \
-  werb XCAT(w, __LINE__) __attribute__((__section__("werbs"))) __attribute__((__used__)) = { .name=NAME, .func=fENTER, .args=XCAT(wargs, __LINE__) };
+#define WERB(T, N, STMT) _WERB(0, T, N, NULL) { STMT; return 0; }
+#define IWERB(T, N, STMT) _WERB(1, T, N, NULL) { STMT; return 0; }
+
+// ---
 
 typedef struct array {
     INT *vals;
@@ -53,7 +57,11 @@ typedef struct array {
 #define A_i A->vals[i%$A]
 #define B_i B->vals[i%$B]
 
-// --- stacks and forth internals ---
+// loop over each cell in X or X|Y
+#define DO1(X, STMT) DO(tr((X)->rank, (X)->dims), i64 *p=&(X)->vals[i]; STMT)
+#define DO2(X, Y, STMT) int X_n=tr((X)->rank, (X)->dims), Y_n=tr((Y)->rank, (Y)->dims); DO(MAX(X_n, Y_n), i64 *p=&(X)->vals[i]; STMT)
+
+// --- stack machine ---
 typedef array *DAT;
 
 extern DAT STACK[16];
@@ -62,7 +70,6 @@ extern DAT *SP;
 DAT push(DAT a) { *SP++ = a; return a; }
 DAT pop(void) { assert(DEPTH > 0); return *--SP; }
 DAT peek(int n) { assert(DEPTH >= n); return *(SP-n-1); }
-
 
 // --- return stack ---
 typedef werb *XT;
@@ -75,7 +82,6 @@ RET rpop(void) { assert(RDEPTH > 0); return *--RP; }
 
 extern XT *IP;
 
-extern char dict[8192];
 extern char *DP;
 extern int STATE;
 
