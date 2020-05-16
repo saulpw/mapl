@@ -43,12 +43,13 @@ typedef int (verbfunc)(struct verb *);
 typedef struct verb {
     const char *name;
     verbfunc *func;
-    struct verb *args[];
+    struct verb **args;
+    void *padding; // need to make struct aligned for section alignment
 } verb;
 extern verb __start_verbs[], __stop_verbs[];
 
-#define _VERB(TOK, VERBNAME, ARGS...) extern int v_##VERBNAME(verb *v); \
-  verb verb_##VERBNAME __attribute__((__section__("verbs"))) __attribute__((__used__)) = { TOK, v_##VERBNAME, {ARGS} }; \
+#define _VERB(TOK, VERBNAME, ARGS) extern int v_##VERBNAME(verb *v); \
+  verb verb_##VERBNAME __attribute__((__section__("verbs"))) __attribute__((__used__)) = { TOK, v_##VERBNAME, ARGS }; \
   int v_##VERBNAME(verb *v)
 
 verb *find(const char *tok) {
@@ -121,15 +122,24 @@ int parse(char *out, const char *input) { // return number of chars parsed into 
     return s - input;
 }
 
+_VERB("accept", accept, NULL) {
+    static char s[128];
+    if (!fgets(s, sizeof(s), stdin)) {
+        perror("stdin");
+        exit(0);
+    }
+    PR("   DEPTH=%ld >>>  %s", DEPTH, s);
+    TIB = s;
+    return 0;
+}
+
 // parse single token from input buffer, and either parse+append number, or find+execute word
 // return -1 if more input needed.
-
-_VERB("interpret_word", interpret_word) {
-    if (!TIB) { return -1; }
-    if (!TIB[0]) { return -1; }
+_VERB("interpret_word", interpret_word, NULL) {
+    if (!TIB || !TIB[0]) { goto getline; }
 
     int i = parse(PAD, TIB);
-    if (!*PAD) return -1;
+    if (!*PAD) { goto getline; }
 
     char *endptr = NULL;
     i64 val = strtoll(PAD, &endptr, 0);
@@ -142,45 +152,49 @@ _VERB("interpret_word", interpret_word) {
     }
     TIB += i;
     return 1;
+getline:
+    v_accept(NULL);
+    return v_interpret_word(v);
 }
 
-int main()
-{
-    char s[128];
-    while(fgets(s, sizeof(s), stdin)) {
-        PR("   DEPTH=%ld >>>  %s", DEPTH, s);
-        TIB = s;
-        while (v_interpret_word(NULL) > 0) {}
-    }
-}
+#define CAT(a,b) a##b
+#define XCAT(a,b) CAT(a,b)
+#define DEF(TOK, ARGS...) \
+  verb *XCAT(verb_args, __LINE__)[] = { ARGS }; \
+  verb XCAT(verb_, __LINE__) __attribute__((__section__("verbs"))) __attribute__((__used__)) = { TOK, v_enter, XCAT(verb_args, __LINE__) };
 
 // --- mapl ---
-#define VERB(T, N, STMT) _VERB(T, N) { array *A=NULL, *B=NULL; STMT; return 0; }
-#define UNOP(T, N, STMT)  _VERB(T, N) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
-#define BINOP(T, N, STMT) _VERB(T, N) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
+#define WORD(T, N, STMT) _VERB(T, N, NULL) { STMT; return 0; }
+#define VERB(T, N, STMT) _VERB(T, N, NULL) { array *A=NULL, *B=NULL; STMT; return 0; }
+#define UNOP(T, N, STMT)  _VERB(T, N, NULL) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
+#define BINOP(T, N, STMT) _VERB(T, N, NULL) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
 
-VERB("dup", dup, push(peek(0)))
-VERB("drop", drop, pop())
+WORD("dup", dup, push(peek(0)))
+WORD("drop", drop, pop())
+WORD("ENTER", enter, rpush(IP); IP = v->args)
+WORD("EXIT", exit,  IP = rpop())
+WORD("(BRANCH)", branch, INT i=(INT) *IP++; IP += i)
+
 BINOP("+", add, A_i += B_i)
 BINOP("*", mult, A_i *= B_i)
 BINOP("==", equals, A_i = (A_i == B_i))
-VERB(".S", printstack, DO(DEPTH, print(peek(i))))
-VERB("[", pusharray, INT x=0; push(redim(NULL, 1, &x)))
+WORD(".S", printstack, DO(DEPTH, print(peek(i))))
+WORD("[", pusharray, INT x=0; push(redim(NULL, 1, &x)))
 UNOP("iota", iota, B=push(reshape(NULL, $A, A->vals)); DO1(B, *p=i))
 UNOP(".", print, print(A))
 UNOP("??", check, DO1(A, assert(A_i)))
 VERB("reshape", reshape, B=pop(); A=peek(0); reshape(A, $B, B->vals))
 UNOP("*/", mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))
 
-_VERB("ENTER", enter) { rpush(IP); IP = v->args; return 0; }
-_VERB("EXIT", exit)   { IP = rpop(); return 0; }
-_VERB("(BRANCH)", branch) { INT i=(INT) *IP++; IP += i; return 0; }
-
-#define CAT(a,b) a##b
-#define XCAT(a,b) CAT(a,b)
-#define DEF(TOK, ARGS...) \
-  verb XCAT(verb_, __LINE__) __attribute__((__section__("verbs"))) __attribute__((__used__)) = { TOK, v_enter, {ARGS} };
-
-
 DEF("QUIT", &verb_interpret_word, &verb_branch, (verb *) -3);
 DEF("SQUARE", &verb_dup, &verb_mult, &verb_exit)
+
+int main()
+{
+    IP = find("QUIT")->args;
+
+    while (1) {
+        verb *v = *IP++;
+        v->func(v);
+    }
+}

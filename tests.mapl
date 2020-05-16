@@ -7,4 +7,5 @@
 [ 8 iota [ 1 + */ .
 
 [ 5 iota dup * .
+
 [ 5 iota square .
