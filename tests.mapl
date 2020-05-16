@@ -1,5 +1,8 @@
 : \  10 PARSE DROP ; IMMEDIATE
+: (  41 PARSE DROP ; IMMEDIATE
+
 \ testing comments
+( also these )
 
 [ 2 3 [ 2 1 + .
 [ 5 iota [ 5 iota + .

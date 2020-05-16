@@ -99,6 +99,7 @@ void parse(int ch, char *_out)
             if (NUMTIB <= 0) f_BYE(0);
             TIB = _TIB;
         } else if (out-_out) {
+            NUMTIB--; TIB++; // skip final character
             *out = 0;
             PR("%s ", PAD);
             return;
