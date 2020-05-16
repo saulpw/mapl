@@ -52,7 +52,7 @@ extern verb __start_verbs[], __stop_verbs[];
   int v_##VERBNAME(verb *v)
 
 verb *find(const char *tok) {
-    DO(__stop_verbs-__start_verbs, if(!strcasecmp(__start_verbs[i].name, PAD)) return &__start_verbs[i]);
+    DO(__stop_verbs-__start_verbs, if(!strcasecmp(__start_verbs[i].name, tok)) return &__start_verbs[i]);
     return NULL;
 }
 
