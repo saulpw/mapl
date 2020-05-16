@@ -1,3 +1,6 @@
+: \  10 PARSE DROP ; IMMEDIATE
+\ testing comments
+
 [ 2 3 [ 2 1 + .
 [ 5 iota [ 5 iota + .
 [ 5 DUP . iota [ 5 iota + .

@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
 
 typedef long long int i64;
@@ -36,17 +37,16 @@ typedef struct array {
 #define B_i B->vals[i%$B]
 
 // --- dict ---
-char PAD[80];
+char PAD[128];
 
 struct verb;
 typedef int (verbfunc)(struct verb *);
 typedef struct verb {
-    const char *name;
+    char flags;
+    char name[39];
     struct verb *prev;
     verbfunc *func;
     struct verb **args;
-    char flags;
-    char padding[31];
 } verb;
 extern verb __start_verbs[], __stop_verbs[];
 
@@ -69,7 +69,7 @@ array **SP = STACK;
 #define DEPTH (SP-STACK)
 array *push(array *a) { *SP++ = a; return a; }
 array *pop(void) { assert(DEPTH > 0); return *--SP; }
-#define peek(X) *(SP-(X)-1)
+array *peek(int n) { assert(DEPTH >= n); return *(SP-n-1); }
 
 void cr(void) { PR("\n"); }
 
@@ -82,7 +82,9 @@ verb **rpop(void) { assert(RDEPTH > 0); return *--RP; }
 
 verb **IP = NULL;
 
-const char *TIB = NULL;
+char _TIB[128];
+char *TIB = _TIB;
+int NUMTIB = 0;
 
 char dict[8192];
 char *DP = dict;
@@ -108,7 +110,10 @@ array *reshape(array *A, int rank, INT dims[rank]) {
     return A;
 }
 void append(array *A, i64 v) { INT s[A->rank]; copy(s, A->strides, A->rank); s[0]++; redim(A, A->rank, s); A->vals[$A++] = v; }
+INT unboxint(array *A) { assert($$A == 1 && $A == 1); return A->vals[0]; }
 array *boxint(INT v) { INT x=1; array *A=redim(NULL, 1, &x); append(A, v); return A; }
+#define boxptr(P) boxint ((INT) (P))
+INT popi(void) { assert(DEPTH > 0); return unboxint(pop()); }
 
 void print_rank(array *A, int n) {
     if (!A) { PR("(null) "); return; }
@@ -123,23 +128,6 @@ void print_rank(array *A, int n) {
 void print(array *A) { print_rank(A, A->rank); }
 
 // --- REPL ---
-int parse(char *out, const char *input) { // return number of chars parsed into out
-    const char *s = input;
-    while (*s && isspace(*s)) ++s; // skip spaces
-    while (*s && !isspace(*s)) *out++ = *s++; // copy non-spaces
-    *out = 0;
-    return s - input;
-}
-
-_VERB(0, "accept", accept, NULL) {
-    static char s[128];
-    if (!fgets(s, sizeof(s), stdin)) {
-        exit(0);
-    }
-    PR("   DEPTH=%ld >>>  %s", DEPTH, s);
-    TIB = s;
-    return 0;
-}
 
 void *allot(int n) { void *ptr=DP; DP += n; return ptr; }
 int compile(void *ptr) { void **r = allot(sizeof(ptr)); *r = ptr; return 0; }
@@ -157,36 +145,7 @@ int compile(void *ptr) { void **r = allot(sizeof(ptr)); *r = ptr; return 0; }
 #define UNOP(T, N, STMT)  _VERB(0, T, N, NULL) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
 #define BINOP(T, N, STMT) _VERB(0, T, N, NULL) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
 
-WORD("DOLITERAL", DOLITERAL, append(peek(0), (INT) *IP++))
-
-// parse single token from input buffer, and either parse+append number, or find+execute word
-// return -1 if more input needed.
-_VERB(0, "interpret_word", interpret_word, NULL) {
-    if (!TIB || !TIB[0]) { goto getline; }
-
-    TIB += parse(PAD, TIB);
-    if (!*PAD) { goto getline; }
-
-    char *endptr = NULL;
-    i64 val = strtoll(PAD, &endptr, 0);
-    if (endptr != PAD) { // some valid number
-        if (STATE) {
-            compile(&verb_DOLITERAL);
-            compile((void *) val);
-        } else {
-            append(peek(0), val);
-        }
-    } else {
-        verb *v = find(PAD);
-        if (!v) { PR("unknown: %s\n", PAD); }
-        else { if (STATE && !v->flags) compile(v); else v->func(v); }
-    }
-    return 1;
-getline:
-    v_accept(NULL);
-    return v_interpret_word(v);
-}
-
+WORD("DOLITERAL", DOLITERAL, push(boxint((INT) *IP++)))
 WORD("dup", dup, push(peek(0)))
 WORD("drop", drop, pop())
 WORD("ENTER", enter, rpush(IP); IP = v->args)
@@ -204,24 +163,48 @@ UNOP("??", check, DO1(A, assert(A_i)))
 VERB("reshape", reshape, B=pop(); A=peek(0); reshape(A, $B, B->vals))
 UNOP("*/", mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))
 
-DEF("QUIT", &verb_interpret_word, &verb_branch, (verb *) -3);
-//DEF("SQUARE", &verb_dup, &verb_mult, &verb_exit)
+WORD("BYE", BYE, exit(0))
+
+int matches(int fl, int ch) {
+    if (fl) return (fl == ch);
+    else return isspace(ch);
+}
+
+void parse(int ch, char *_out)
+{
+    char *out = _out;
+
+    while (1) {
+        while (NUMTIB && matches(ch, *TIB)) { --NUMTIB, ++TIB; }; // skip spaces
+        while (NUMTIB && !matches(ch, *TIB)) { --NUMTIB; *out++ = *TIB++; } // copy non-spaces
+        if (!NUMTIB) {
+            NUMTIB = fread(_TIB, 1, sizeof(_TIB), stdin);
+            if (NUMTIB <= 0) v_BYE(0);
+            TIB = _TIB;
+        } else if (out-_out) {
+            *out = 0;
+            PR("%s ", PAD);
+            return;
+        }
+    }
+}
+
+_VERB(0, "PARSE", PARSE, NULL) { parse(popi(), PAD); push(boxptr(PAD)); }
+
 WORD("CREATE", create,
-        char *name=DP;
-        int i=parse(DP, TIB);
-        TIB += i;
-        DP += i;
-        *DP++ = 0;
+        parse(0, PAD);
         v=allot(sizeof(verb));
-        v->name=name;
+        strncpy(v->name, PAD, sizeof(v->name));
         v->prev=LATEST;
         v->func=v_enter;
         v->args=(void *) DP;
         LATEST=v
         )
 
+
 WORD(":", COLON, v_create(0); STATE=1)
 IMMEDWORD(";", SEMICOLON, compile(&verb_exit); STATE=0)
+WORD("IMMEDIATE", IMMEDIATE, LATEST->flags=1)
 
 int main()
 {
@@ -232,3 +215,26 @@ int main()
         v->func(v);
     }
 }
+// parse single token from input buffer, and either parse+append number, or find+execute word
+// return -1 if more input needed.
+_VERB(0, "interpret_word", interpret_word, NULL) {
+    parse(0, PAD);
+
+    char *endptr = NULL;
+    i64 val = strtoll(PAD, &endptr, 0);
+    if (endptr != PAD) { // some valid number
+        if (STATE) {
+            compile(&verb_DOLITERAL);
+            compile((void *) val);
+        } else {
+            append(peek(0), val);
+        }
+    } else {
+        verb *v = find(PAD);
+        if (!v) { PR("unknown: %s\n", PAD); }
+        else { if (STATE && !v->flags) compile(v); else v->func(v); }
+    }
+    return 1;
+}
+
+DEF("QUIT", &verb_interpret_word, &verb_branch, (verb *) -3);
