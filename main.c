@@ -22,6 +22,7 @@ int COMPILING=0;
 
 WERB("BYE",      BYE,    exit(0))
 WERB("DUP",      DUP,    push(peek(0)))
+WERB("SWAP",     SWAP,   DAT x=pop(); DAT y=pop(); push(x); push(y))
 WERB("DROP",     DROP,   pop())
 WERB("ENTER",    ENTER,  rpush(IP); IP=w->args)
 WERB("EXIT",     EXIT,   IP=rpop())
@@ -194,6 +195,7 @@ werb w_QUIT SECTION(werbs) = { .name="QUIT", .func=f_ENTER, .args=QUIT_args };
 
 BINOP("+",   add,    A_i += B_i)
 BINOP("*",   mult,   A_i *= B_i)
+BINOP("/",   div,    A_i /= B_i)
 BINOP("==",  equals, A_i = (A_i == B_i))
 WERB(",",   cat,
         array *B=pop();
@@ -207,7 +209,9 @@ WERB(",",   cat,
 
 UNOP(".",    print,  print(A))
 UNOP("??",   check,  DO1(A, assert(A_i)))
+UNOP("$",    shape, push(boxint($A)))
 UNOP("*/",   mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))
+UNOP("+/",   sum_reduce, int acc=0; DO($A, acc += A_i); push(boxint(acc)))
 UNOP("iota", iota, B=push(reshape(NULL, $A, A->vals)); DO1(B, *p=i))
 UNOP("reshape", reshape, B=peek(0); reshape(B, $A, A->vals))
 
