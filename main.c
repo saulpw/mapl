@@ -123,8 +123,8 @@ void parse(int ch, char *_out)
         while (NUMTIB && matches(ch, *TIB)) { --NUMTIB, ++TIB; }; // skip spaces
         while (NUMTIB && !matches(ch, *TIB)) { --NUMTIB; *out++ = *TIB++; } // copy non-spaces
         if (!NUMTIB) {
-            NUMTIB = fread(_TIB, 1, sizeof(_TIB), stdin);
-            if (NUMTIB <= 0) f_BYE(0);
+            if (!fgets(_TIB, sizeof(_TIB), stdin)) f_BYE(0);
+            NUMTIB = strlen(_TIB);
             TIB = _TIB;
         } else if (out-_out) {
             NUMTIB--; TIB++; // skip final character
