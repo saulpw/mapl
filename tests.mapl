@@ -16,3 +16,5 @@
 
 : SQUARE dup * ;
 [ 5 iota square .
+
+[ 1 2 3 [ 4 5 6 , .

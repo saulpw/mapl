@@ -29,14 +29,41 @@ WERB("(BRANCH)", BRANCH, INT i=(INT) *IP++; IP += i)
 
 void    copy(INT *d, INT *s, int n) { DO(n, d[i]=s[i]); }
 void revcopy(INT *d, INT *s, int n) { DO(n, d[n-i-1]=s[i]); }
+void    zero(INT *d, int n) { DO(n, d[i]=0); }
 
 // --- arrays ---
 
-int tr(int rank, INT dims[rank]) { i64 z=1; DO(rank, z*=dims[i]); return z; }
+int ncells(int rank, INT dims[rank]) { i64 z=1; DO(rank, z*=dims[i]); return z; }
+int totdim(array *A) { return ncells(A->rank, A->dims); }
+int totcap(array *A) { return ncells(A->rank, A->strides); }
+
+array *arr(int rank, INT caps[rank]) {
+    array *A = alloc(sizeof(array));
+    bzero(A, sizeof(array));
+    A->rank = rank;
+    copy(A->strides, caps, rank);
+    A->vals = alloc(totcap(A)*sizeof(INT));
+    return A;
+}
+
+// change strides in A and copy existing contents into new structure
+array *restride(array *A, int rank, INT strides[rank]) {
+    array *B = arr(rank, strides);
+    copy(B->dims, A->dims, rank);
+    copy(B->vals, A->vals, MIN($A, $B));
+    return B;
+}
+
+array *resize(array *A, int rank, INT dims[rank]) {
+    array *B = restride(A, rank, dims);
+    copy(B->dims, dims, rank);
+    return B;
+}
+
 array *redim(array *A, int rank, INT strides[rank]) {
     if (!A) { A=alloc(sizeof(array)); bzero(A, sizeof(*A)); A->rank=1; }
-    INT total = tr(rank, strides);
-    if (total > tr(A->rank, A->strides)) { A->vals=realloc(A->vals, sizeof(*A->vals)*total); assert(A->vals); }
+    INT total = ncells(rank, strides);
+    if (total > totcap(A)) { A->vals=realloc(A->vals, sizeof(*A->vals)*total); }
     A->rank=rank;
     copy(A->strides, strides, rank);
     return A;
@@ -168,6 +195,16 @@ werb w_QUIT SECTION(werbs) = { .name="QUIT", .func=f_ENTER, .args=QUIT_args };
 BINOP("+",   add,    A_i += B_i)
 BINOP("*",   mult,   A_i *= B_i)
 BINOP("==",  equals, A_i = (A_i == B_i))
+WERB(",",   cat,
+        array *B=pop();
+        array *A=pop();
+        INT An=totdim(A);
+        INT Bn=totdim(B);
+        INT n=An+Bn;
+        array *ret=resize(A, 1, &n);
+        copy(ret->vals+An, B->vals, Bn);
+        push(ret))
+
 UNOP(".",    print,  print(A))
 UNOP("??",   check,  DO1(A, assert(A_i)))
 UNOP("*/",   mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))

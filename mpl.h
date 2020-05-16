@@ -55,8 +55,8 @@ typedef struct array {
 #define $$B B->rank
 
 // loop over each cell in X or X|Y
-#define DO1(X, STMT) DO(tr((X)->rank, (X)->dims), i64 *p=&(X)->vals[i]; STMT)
-#define DO2(X, Y, STMT) int X_n=tr((X)->rank, (X)->dims), Y_n=tr((Y)->rank, (Y)->dims); DO(MAX(X_n, Y_n), i64 *p=&(X)->vals[i]; STMT)
+#define DO1(X, STMT) DO(totdim(X), i64 *p=&(X)->vals[i]; STMT)
+#define DO2(X, Y, STMT) int X_n=totdim(X), Y_n=totdim(Y); DO(MAX(X_n, Y_n), i64 *p=&(X)->vals[i]; STMT)
 
 typedef werb *XT; // execution token
 
