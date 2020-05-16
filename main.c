@@ -5,62 +5,12 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-typedef long long int i64;
-#define INT i64
-#define alloc malloc
-
-#define CAT(a,b) a##b
-#define XCAT(a,b) CAT(a,b)
-#define MAX(X,Y) ({ __typeof__ (X) _x = (X); __typeof__ (Y) _y = (Y); _x > _y ? _x : _y; })
-#define MIN(X,Y) ({ __typeof__ (X) _x = (X); __typeof__ (Y) _y = (Y); _x < _y ? _x : _y; })
-#define DO(N,STMT) {int i=0,_n=(N);for(;i<_n;++i){STMT;}}
-#define LEN(X) (sizeof(X)/sizeof((X)[0]))
-#define PR(X...) do { printf(X); fflush(stdout); } while (0)
-#define PINT(X) ({ i64 _x = (X); PR("["#X"=%lld] ", _x); _x; })
-
-// loop over each cell in X or X|Y
-#define DO1(X, STMT) DO(tr((X)->rank, (X)->dims), i64 *p=&(X)->vals[i]; STMT)
-#define DO2(X, Y, STMT) int X_n=tr((X)->rank, (X)->dims), Y_n=tr((Y)->rank, (Y)->dims); DO(MAX(X_n, Y_n), i64 *p=&(X)->vals[i]; STMT)
-
-typedef struct array {
-    INT *vals;
-    int rank;       // len(dims)
-    INT dims[3];    // shape of matrix; [0] is innermost length
-    INT strides[3]; // shape of vals in memory; [0] is innermost stride (maximum length of inner axis)
-} array;
-
-#define $A A->dims[0]
-#define $B B->dims[0]
-#define $$A A->rank
-#define $$B B->rank
-
-#define A_i A->vals[i%$A]
-#define B_i B->vals[i%$B]
+#include "mpl.h"
 
 // --- dict ---
 char PAD[128];
 
-struct werb;
-typedef int (werbfunc)(struct werb *);
-typedef struct werb {
-    char flags;
-    char name[39];
-    struct werb *prev;
-    werbfunc *func;
-    struct werb **args;
-} werb;
-extern werb __start_werbs[], __stop_werbs[];
-
 werb *LATEST = NULL;
-
-#define _WERB(FLAGS, NAME, CTOK, ARGS) \
-  extern int f##CTOK(werb *w); \
-  werb w##CTOK __attribute__((__section__("werbs"))) __attribute__((__used__)) = { .flags=FLAGS, .name=NAME, .func=f##CTOK, .args=ARGS }; \
-  int f##CTOK(werb *w)
-
-#define DEF(NAME, ARGS...) \
-  XT XCAT(wargs, __LINE__)[] = { ARGS }; \
-  werb XCAT(w, __LINE__) __attribute__((__section__("werbs"))) __attribute__((__used__)) = { .name=NAME, .func=fENTER, .args=XCAT(wargs, __LINE__) };
 
 werb *find(const char *tok) {
     werb *w = LATEST;
@@ -69,31 +19,12 @@ werb *find(const char *tok) {
     return NULL;
 }
 
-// --- stacks and forth internals ---
-typedef array *S;
-
-S STACK[16];
-S *SP = STACK;
-#define DEPTH (SP-STACK)
-S push(S a) { *SP++ = a; return a; }
-S pop(void) { assert(DEPTH > 0); return *--SP; }
-S peek(int n) { assert(DEPTH >= n); return *(SP-n-1); }
-
-
-// --- return stack ---
-typedef werb *XT;
-typedef XT *R;
-R RSTACK[16];
-R *RP = RSTACK;
-#define RDEPTH (RP-RSTACK)
-R rpush(R r) { *RP++ = r; return r; }
-R rpop(void) { assert(RDEPTH > 0); return *--RP; }
+DAT STACK[16];
+RET RSTACK[16];
+DAT *SP = STACK;
+RET *RP = RSTACK;
 
 XT *IP = NULL;
-
-char _TIB[128];
-char *TIB = _TIB;
-int NUMTIB = 0;
 
 char dict[8192];
 char *DP = dict;
@@ -155,6 +86,10 @@ int matches(int fl, int ch) {
 
 void parse(int ch, char *_out)
 {
+    static char _TIB[128];
+    static char *TIB = _TIB;
+    static int NUMTIB = 0;
+
     char *out = _out;
 
     while (1) {
@@ -172,12 +107,12 @@ void parse(int ch, char *_out)
     }
 }
 
-_WERB(0, "PARSE", PARSE, NULL) { parse(unboxint(pop()), PAD); push(boxptr(PAD)); }
+WERB("PARSE", PARSE, parse(unboxint(pop()), PAD); push(boxptr(PAD)))
 WERB("DOLIT", DOLIT, push(boxint((INT) *IP++)))
 WERB("DUP", DUP, push(peek(0)))
 WERB("DROP", DROP, pop())
 WERB("ENTER", ENTER, rpush(IP); IP=w->args)
-WERB("EXIT", EXIT,  IP = rpop())
+WERB("EXIT", EXIT,  IP=rpop())
 WERB("(BRANCH)", BRANCH, INT i=(INT) *IP++; IP += i)
 WERB(".S", printstack, DO(DEPTH, print(peek(i))))
 WERB("[", pusharray, INT x=0; push(redim(NULL, 1, &x)))
@@ -211,7 +146,7 @@ _WERB(0, "INTERPRET", INTERPRET, NULL) {
         if (!w) { PR("unknown: %s\n", PAD); }
         else { if (STATE && !w->flags) compile(w); else w->func(w); }
     }
-    return 1;
+    return 0;
 }
 
 WERB(":", COLON, fCREATE(0); STATE=1)
@@ -226,7 +161,7 @@ int main()
 
     while (1) {
         werb *w = *IP++;
-        w->func(w);
+        assert(!w->func(w));
     }
 }
 
