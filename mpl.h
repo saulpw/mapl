@@ -61,6 +61,13 @@ typedef struct array {
 #define DO1(X, STMT) DO(tr((X)->rank, (X)->dims), i64 *p=&(X)->vals[i]; STMT)
 #define DO2(X, Y, STMT) int X_n=tr((X)->rank, (X)->dims), Y_n=tr((Y)->rank, (Y)->dims); DO(MAX(X_n, Y_n), i64 *p=&(X)->vals[i]; STMT)
 
+typedef werb *XT; // execution token
+
+extern XT *IP;    // instruction pointer
+extern char *DP;  // dictionary pointer
+
+#define LOAD(TYPE) ((TYPE) *IP++)
+
 // --- stack machine ---
 typedef array *DAT;
 
@@ -72,17 +79,11 @@ DAT pop(void) { assert(DEPTH > 0); return *--SP; }
 DAT peek(int n) { assert(DEPTH >= n); return *(SP-n-1); }
 
 // --- return stack ---
-typedef werb *XT;
 typedef XT *RET;
 extern RET RSTACK[16];
 extern RET *RP;
 #define RDEPTH (RP-RSTACK)
 RET rpush(RET r) { *RP++ = r; return r; }
 RET rpop(void) { assert(RDEPTH > 0); return *--RP; }
-
-extern XT *IP;
-
-extern char *DP;
-extern int STATE;
 
 #endif

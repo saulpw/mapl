@@ -65,7 +65,7 @@ void print_rank(array *A, int n) {
 }
 void print(array *A) { print_rank(A, A->rank); }
 
-// --- dict ---
+// --- compile/find ---
 
 void *allot(int n) { void *ptr=DP; DP += n; return ptr; }
 int compile(void *ptr) { void **r = allot(sizeof(ptr)); *r = ptr; return 0; }
@@ -105,8 +105,10 @@ void parse(int ch, char *_out)
     }
 }
 
+// ---
+
 WERB("PARSE", PARSE, parse(unboxint(pop()), PAD); push(boxptr(PAD)))
-WERB("DOLIT", DOLIT, push(boxint((INT) *IP++)))
+WERB("DOLIT", DOLIT, push(boxint(LOAD(INT))))
 WERB(".S", printstack, DO(DEPTH, print(peek(i))))
 WERB("[", pusharray, INT x=0; push(redim(NULL, 1, &x)))
 
@@ -114,11 +116,12 @@ WERB("CREATE", CREATE,
         parse(0, PAD);
         w=allot(sizeof(werb));
         strncpy(w->name, PAD, sizeof(w->name));
-        w->prev=LATEST;
-        w->func=f_ENTER;
-        w->args=(void *) DP;
-        LATEST=w
-        )
+        w->func=f_ENTER; w->args=(void *) DP;
+        w->prev=LATEST; LATEST=w)
+
+WERB(":", COLON, f_CREATE(0); STATE=1)
+IWERB(";", SEMICOLON, compile(&wEXIT); STATE=0)
+WERB("IMMEDIATE", IMMEDIATE, LATEST->flags=1)
 
 // parse single token from input buffer, and either parse+append number, or find+execute word
 // return -1 if more input needed.
@@ -142,12 +145,10 @@ _WERB(0, "INTERPRET", INTERPRET, NULL) {
     return 0;
 }
 
-WERB(":", COLON, f_CREATE(0); STATE=1)
-IWERB(";", SEMICOLON, compile(&wEXIT); STATE=0)
-WERB("IMMEDIATE", IMMEDIATE, LATEST->flags=1)
-
 XT QUIT_args[] = { &wINTERPRET, &wBRANCH, (XT) -3 };
 werb w_QUIT SECTION(werbs) = { .name="QUIT", .func=f_ENTER, .args=QUIT_args };
+
+// ---
 
 #define UNOP(T, N, STMT)  _WERB(0, T, N, NULL) { array *A=pop(); array *B=NULL;    STMT; return 0; } // A -> 0
 #define BINOP(T, N, STMT) _WERB(0, T, N, NULL) { array *B=pop(); array *A=peek(0); DO2(A, B, STMT); return 0; } // A B -> A?B
@@ -165,7 +166,7 @@ int main()
     IP = find("QUIT")->args;
 
     while (1) {
-        werb *w = *IP++;
+        werb *w = LOAD(werb *);
         assert(!w->func(w));
     }
 }
