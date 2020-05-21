@@ -25,6 +25,7 @@ WERB("CR",       CR,     PR("\n"))
 WERB("BYE",      BYE,    return -1)
 WERB("DUP",      DUP,    push(peek(0)))
 WERB("SWAP",     SWAP,   DAT x=pop(); DAT y=pop(); push(x); push(y))
+WERB("ROT",      ROT,    DAT x=pop(); DAT y=pop(); DAT z=pop(); push(y); push(x); push(z))
 WERB("DROP",     DROP,   pop())
 WERB("ENTER",    ENTER,  rpush(IP); IP=w->args)
 WERB("EXIT",     EXIT,   IP=rpop())
@@ -161,7 +162,7 @@ _WERB(0, "INTERPRET", INTERPRET, NULL) {
     RETIF(parse(0, PAD));
 
     char *endptr = NULL;
-    i64 val = strtoll(PAD, &endptr, 0);
+    INT val = strtoll(PAD, &endptr, 0);
     if (endptr != PAD) { // some valid number
         if (COMPILING) {
             compile(&wDOLIT);
@@ -214,6 +215,8 @@ UNOP("??",   check,  DO1(A, assert(A_i)))
 UNOP("$",    shape, push(boxint($A)))
 UNOP("*/",   mult_reduce, int acc=1; DO($A, acc *= A_i); push(boxint(acc)))
 UNOP("+/",   sum_reduce, int acc=0; DO($A, acc += A_i); push(boxint(acc)))
+UNOP("&&/",  and_reduce, int acc=0; DO($A, acc = acc && A_i); push(boxint(acc)))
+UNOP("NOT",  logical_not, DO($A, A_i = !A_i); push(A))
 UNOP("iota", iota, B=push(reshape(NULL, $A, A->vals)); DO1(B, *p=i))
 UNOP("reshape", reshape, B=peek(0); reshape(B, $A, A->vals))
 

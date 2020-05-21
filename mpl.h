@@ -4,8 +4,7 @@
 #include <assert.h>
 #include <stdio.h>
 
-typedef long long int i64;
-#define INT i64
+typedef long long int INT;  // CT_ASSERT(sizeof(INT) == sizeof(void *);
 #define alloc malloc
 
 #define CAT(a,b) a##b
