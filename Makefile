@@ -1,12 +1,15 @@
-test: mapl tests.mapl
-	cat tests.mapl | ./mapl
-
-out-tests.txt: mapl tests.mapl
-	cat tests.mapl | ./mapl | tee $@
-	git diff $@
+CFLAGS=-ggdb -fno-inline
 
 mapl: main.c mpl.h
-	gcc -ggdb -o $@ $<
+	gcc $(CFLAGS) -o $@ $<
+
+test: out-test.log
+
+out-test.log: mapl tests.mapl
+	./mapl kernel.mpl tests.mapl | tee $@
+	./mapl kernel.mpl euler-01.mpl
 
 clean:
 	rm -f mapl
+
+.PHONY: test clean

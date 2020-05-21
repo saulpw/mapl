@@ -17,7 +17,9 @@ typedef long long int i64;
 
 #define SECTION(NAME) __attribute__((__section__(#NAME))) __attribute__((__used__))
 #define PR(X...) do { printf(X); fflush(stdout); } while (0)
-#define PINT(X) ({ i64 _x = (X); PR("["#X"=%lld] ", _x); _x; })
+#define PINT(X) ({ INT _x = (X); PR("["#X"=%lld] ", _x); _x; })
+
+#define RETIF(X) ({int _x=(X); if (_x) return _x; _x; })
 
 // ---
 

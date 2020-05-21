@@ -19,8 +19,10 @@ char *DP = dict;
 werb *LATEST = NULL;
 
 int COMPILING=0;
+FILE *g_fp=NULL;
 
-WERB("BYE",      BYE,    exit(0))
+WERB("CR",       CR,     PR("\n"))
+WERB("BYE",      BYE,    return -1)
 WERB("DUP",      DUP,    push(peek(0)))
 WERB("SWAP",     SWAP,   DAT x=pop(); DAT y=pop(); push(x); push(y))
 WERB("DROP",     DROP,   pop())
@@ -111,7 +113,7 @@ int matches(int fl, int ch) {
     else return isspace(ch);
 }
 
-void parse(int ch, char *_out)
+int parse(int ch, char *_out)
 {
     static char _TIB[128];
     static char *TIB = _TIB;
@@ -123,21 +125,21 @@ void parse(int ch, char *_out)
         while (NUMTIB && matches(ch, *TIB)) { --NUMTIB, ++TIB; }; // skip spaces
         while (NUMTIB && !matches(ch, *TIB)) { --NUMTIB; *out++ = *TIB++; } // copy non-spaces
         if (!NUMTIB) {
-            if (!fgets(_TIB, sizeof(_TIB), stdin)) f_BYE(0);
+            if (!fgets(_TIB, sizeof(_TIB), g_fp)) { return EOF; }
             NUMTIB = strlen(_TIB);
             TIB = _TIB;
         } else if (out-_out) {
             NUMTIB--; TIB++; // skip final character
             *out = 0;
             PR("%s ", PAD);
-            return;
+            return 0;
         }
     }
 }
 
 // ---
 
-WERB("PARSE", PARSE, parse(unboxint(pop()), PAD); push(boxptr(PAD)))
+WERB("PARSE", PARSE, RETIF(parse(unboxint(pop()), PAD)); push(boxptr(PAD)))
 WERB("DOLIT", DOLIT, push(boxint(LOAD(INT))))
 WERB(".S", printstack, DO(DEPTH, print(peek(i))))
 WERB("[", pusharray, INT x=0; push(redim(NULL, 1, &x)))
@@ -156,7 +158,7 @@ WERB("IMMEDIATE", IMMEDIATE, LATEST->flags=1)
 // parse single token from input buffer, and either parse+append number, or find+execute word
 // return -1 if more input needed.
 _WERB(0, "INTERPRET", INTERPRET, NULL) {
-    parse(0, PAD);
+    RETIF(parse(0, PAD));
 
     char *endptr = NULL;
     i64 val = strtoll(PAD, &endptr, 0);
@@ -215,11 +217,24 @@ UNOP("+/",   sum_reduce, int acc=0; DO($A, acc += A_i); push(boxint(acc)))
 UNOP("iota", iota, B=push(reshape(NULL, $A, A->vals)); DO1(B, *p=i))
 UNOP("reshape", reshape, B=peek(0); reshape(B, $A, A->vals))
 
-void main()
+WERB("EOF",   eof, return EOF)
+
+WERB("EXECUTE", execute, return w->func(w))
+
+int main(int argc, const char *argv[])
 {
     f_ABORT(0);
+    werb *w = &weof;
+    int n=1;
     while (1) {
-        werb *w = LOAD(werb *);
-        assert(!w->func(w));
+        switch (f_execute(w)) {
+        case 0: break;
+        case EOF:
+            if (g_fp) fclose(g_fp);
+            if (n >= argc) return 0;
+            g_fp = fopen(argv[n++], "r");
+            break;
+        }
+        w = LOAD(werb *);
     }
 }
