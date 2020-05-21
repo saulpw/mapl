@@ -1,7 +1,7 @@
 test: mapl tests.mapl
 	cat tests.mapl | ./mapl
 
-test-golden.txt: mapl tests.mapl
+out-tests.txt: mapl tests.mapl
 	cat tests.mapl | ./mapl | tee $@
 	git diff $@
 
