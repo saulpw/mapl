@@ -13,3 +13,4 @@ clean:
 	rm -f mapl
 
 .PHONY: test clean
+.PRECIOUS: out-test.log

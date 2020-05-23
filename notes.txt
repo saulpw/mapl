@@ -1,0 +1,20 @@
+# design elements
+
+- `array.strides[]`
+  - allows arrays to be used as queues
+  - allows lightweight slices
+  - should be in cumulative bytes, for fastest
+- `array.dims[]`
+- max rank of [3]
+  - simplifies loop-over-all-elements
+
+- common function structure
+  - unless special case, always return int
+    if not 0 (success/continue), the return code should either be processed or returned itself.
+        use RETIF return any non-zero return code.
+
+- SECTION for werbs
+  - allows modularity/extensibility (just compile in another file)
+     - without needing to modify the core
+  - downside: werb struct size must be power of 2
+
